@@ -2402,13 +2402,16 @@ function openAiPlanModal() {
         rawText = await cloned.text().catch(() => "");
       }
       if (!resp.ok) {
+        const versionFromBody = typeof data?.serverVersion === "string" ? data.serverVersion.trim() : "";
+        const versionFromHeader = (resp.headers.get("X-Server-Version") || "").trim();
+        const version = versionFromBody || versionFromHeader;
         const msg =
           typeof data?.error === "string" && data.error.trim()
             ? data.error.trim()
             : rawText && String(rawText).trim()
               ? `AI 服務錯誤（HTTP ${resp.status}）`
               : `AI 服務錯誤（HTTP ${resp.status}）`;
-        showToast(msg, { variant: "warn", durationMs: 2600 });
+        showToast(version ? `${msg}（${version}）` : msg, { variant: "warn", durationMs: 2600 });
         return;
       }
       const updates = data?.updates;
