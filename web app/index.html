@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-HK">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>訓練監控</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <nav class="tabs" aria-label="主要">
+        <button class="tab is-active" type="button" data-tab="plan">訓練監控</button>
+        <button class="tab" type="button" data-tab="pace">配速計算機</button>
+      </nav>
+    </header>
+
+    <main class="page">
+      <section id="tab-plan" class="tabPanel is-active" aria-label="訓練監控">
+        <div class="planActions">
+          <div class="planActions__right">
+            <button id="raceInputBtn" class="btn btn--primary" type="button">輸入比賽</button>
+            <button id="aiPlanBtn" class="btn" type="button">AI 編排</button>
+            <button id="exportPdfBtn" class="btn" type="button">匯出 PDF</button>
+            <button id="resetBtn" class="btn" type="button">重設</button>
+          </div>
+        </div>
+
+        <div id="plannedVolume52" class="calendarSummary" aria-label="52 週計劃訓練量"></div>
+
+        <div id="calendarShell" class="calendarShell" aria-label="訓練表">
+          <div class="calendarSizer" aria-label="表格大小">
+            <button id="calSizeUp" class="iconBtn" type="button" aria-label="放大" title="放大">+</button>
+            <input id="calSizeRange" class="calSizeRange" type="range" min="70" max="140" step="5" value="100" aria-label="表格大小" />
+            <button id="calSizeDown" class="iconBtn" type="button" aria-label="縮小" title="縮小">−</button>
+          </div>
+          <div class="calendarWrap">
+            <div id="calendar" class="calendar" role="grid" aria-label="52 週訓練表"></div>
+          </div>
+        </div>
+
+        <section class="weekSection" aria-label="每週詳情">
+          <div class="weekHeader">
+            <div class="weekPicker">
+              <span class="muted">選擇週</span>
+              <select id="weekSelect" aria-label="選擇週"></select>
+            </div>
+            <div id="weekMeta" class="muted"></div>
+          </div>
+          <div id="weekDays" class="weekDays" aria-label="Day 卡片"></div>
+        </section>
+
+        <div id="chartsRoot" class="chartsGrid" aria-label="圖表內容"></div>
+      </section>
+
+      <section id="tab-pace" class="tabPanel" aria-label="配速計算機">
+        <div class="paceIntro">
+          <div class="calendarSummary" aria-label="配速計算機說明">
+            <div class="paceIntro__title">配速計算機</div>
+            <div class="muted">輸入測試成績後，系統會推算配速區間與推測完賽時間（VDOT 模型）</div>
+          </div>
+        </div>
+
+        <div class="paceGrid" aria-label="配速計算機內容">
+          <div class="chartCard" aria-label="輸入測試成績">
+            <div class="chartCard__title">輸入測試成績</div>
+            <div class="paceForm">
+              <label class="paceField">
+                <span class="muted">測試距離</span>
+                <select id="paceTestDistance" class="input" aria-label="測試距離"></select>
+              </label>
+              <div class="paceField">
+                <span class="muted">時間（時:分:秒）</span>
+                <div class="paceTimeGrid" aria-label="測試時間">
+                  <input id="paceTestHours" class="input paceTimeInput" type="number" inputmode="numeric" min="0" placeholder="時" aria-label="小時" />
+                  <input id="paceTestMinutes" class="input paceTimeInput" type="number" inputmode="numeric" min="0" max="59" placeholder="分" aria-label="分鐘" />
+                  <input id="paceTestSeconds" class="input paceTimeInput" type="number" inputmode="numeric" min="0" max="59" placeholder="秒" aria-label="秒" />
+                </div>
+              </div>
+              <div class="paceActions">
+                <button id="paceCalcBtn" class="btn btn--primary" type="button">計算</button>
+                <button id="paceResetBtn" class="btn" type="button">重設</button>
+              </div>
+              <div id="paceMeta" class="muted" aria-label="測試結果摘要"></div>
+            </div>
+          </div>
+
+          <div class="chartCard" aria-label="配速區間">
+            <div class="chartCard__title">配速區間</div>
+            <div id="paceZones" class="paceTable" aria-label="配速區間表"></div>
+          </div>
+
+          <div class="chartCard" aria-label="推測完賽時間">
+            <div class="chartCard__title">推測完賽時間</div>
+            <div id="pacePredictions" class="paceTable" aria-label="推測完賽時間表"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

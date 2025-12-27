@@ -1,0 +1,1297 @@
+:root {
+  --bg: #f7f9fc;
+  --surface: #ffffff;
+  --surface2: #f1f5f9;
+  --text: #0f172a;
+  --muted: #475569;
+  --border: rgba(15, 23, 42, 0.14);
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 10px 30px rgba(15, 23, 42, 0.12);
+  --radius: 12px;
+  --radiusSm: 10px;
+  --accent: #1d4ed8;
+  --accentHover: #2563eb;
+  --accentSoft: rgba(29, 78, 216, 0.12);
+  --accentGrad: linear-gradient(180deg, #3b82f6, #1d4ed8);
+  --ring: rgba(29, 78, 216, 0.22);
+  --ringSoft: rgba(29, 78, 216, 0.08);
+  --cellW: 40px;
+  --labelW: 120px;
+  --cellH: 26px;
+  --racesH: 132px;
+  --calFont: 11px;
+  --calControlH: 22px;
+  --fontBody: "Noto Sans TC", "PingFang HK", "Microsoft JhengHei", "Noto Sans", ui-sans-serif, system-ui, -apple-system, Segoe UI,
+    Roboto, Arial, sans-serif;
+  --fontDisplay: Impact, Haettenschweiler, "Arial Narrow Bold", "Arial Narrow", "Bahnschrift SemiCondensed", "Franklin Gothic Medium Cond",
+    "Franklin Gothic Condensed", "Arial Black", var(--fontBody);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--fontBody);
+  background: radial-gradient(900px 520px at 20% 0%, rgba(29, 78, 216, 0.08), transparent 60%),
+    radial-gradient(900px 520px at 80% 0%, rgba(59, 130, 246, 0.06), transparent 60%),
+    linear-gradient(180deg, var(--bg), #ffffff 75%);
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.toast {
+  position: fixed;
+  left: 14px;
+  bottom: 14px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 12px;
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  max-width: min(520px, calc(100vw - 28px));
+  white-space: pre-line;
+  z-index: 1000;
+}
+
+.toast--warn {
+  color: var(--text);
+  border-color: rgba(220, 38, 38, 0.35);
+  background: rgba(127, 29, 29, 0.35);
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(10px);
+  padding: 10px 14px;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.tab {
+  font-family: var(--fontDisplay);
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  letter-spacing: 0.9px;
+  text-transform: none;
+}
+
+.tab:hover {
+  background: rgba(17, 24, 39, 0.04);
+}
+
+.tab:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.tab.is-active {
+  background: var(--accentSoft);
+  color: var(--text);
+  font-weight: 400;
+}
+
+.page {
+  padding: 18px 14px 26px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.tabPanel {
+  display: none;
+}
+
+.tabPanel.is-active {
+  display: block;
+}
+
+.btn {
+  font-family: var(--fontDisplay);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  padding: 8px 12px;
+  font-size: 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.05);
+  letter-spacing: 0.7px;
+  text-transform: none;
+}
+
+.btn:hover {
+  border-color: rgba(29, 78, 216, 0.45);
+  box-shadow: 0 0 0 3px var(--ringSoft), var(--shadow);
+}
+
+.btn:active {
+  transform: translateY(0.5px);
+}
+
+.btn:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.btn--primary {
+  background: var(--accentGrad);
+  border-color: var(--accent);
+  color: var(--text);
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.12), 0 18px 40px rgba(15, 23, 42, 0.18);
+}
+
+.btn--primary:hover {
+  background: var(--accentHover);
+  border-color: var(--accentHover);
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.planTop {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.planTop__left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.planTop__center {
+  text-align: center;
+  display: grid;
+  gap: 4px;
+}
+
+.planTop__range {
+  font-size: 12px;
+}
+
+.planTop__volume {
+  font-size: 12px;
+}
+
+.planTop__right {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.planActions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
+.planActions__right {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.calendarSummary {
+  margin: 0 0 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(10px);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.calendarShell {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.calendarSizer {
+  width: 44px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 6px;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.calSizeRange {
+  width: 18px;
+  height: 220px;
+  accent-color: var(--accent);
+  writing-mode: bt-lr;
+  appearance: slider-vertical;
+}
+
+.calSizeRange:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
+.calendarWrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-x: auto;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  flex: 1 1 auto;
+}
+
+.calendar {
+  min-width: calc(var(--labelW) + 52 * var(--cellW));
+}
+
+.calRow {
+  display: grid;
+  grid-template-columns: var(--labelW) repeat(52, var(--cellW));
+  border-bottom: 1px solid var(--border);
+}
+
+.calRow:last-child {
+  border-bottom: none;
+}
+
+.calRow:nth-child(odd) .calCell {
+  background: rgba(15, 23, 42, 0.02);
+}
+
+.calRow--races .calCell {
+  height: var(--racesH);
+}
+
+.calRow--races .calLabel {
+  background: var(--surface);
+}
+
+.calCell {
+  border-right: 1px solid var(--border);
+  height: var(--cellH);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--calFont);
+  white-space: nowrap;
+  text-align: center;
+}
+
+.calCell:last-child {
+  border-right: none;
+}
+
+.calCell--clickable {
+  cursor: pointer;
+}
+
+.calCell--clickable:hover {
+  background: rgba(29, 78, 216, 0.06);
+}
+
+.phaseCell {
+  padding: 0;
+}
+
+.calRow .phaseCell.is-on {
+  background: var(--phaseBg);
+}
+
+.calRow .phaseCell.is-on:hover {
+  background: var(--phaseBg);
+}
+
+.calRow .calCell.phaseLabel {
+  background: var(--phaseBg);
+  color: #ffffff;
+}
+
+.calLabel {
+  justify-content: center;
+  padding-left: 0;
+  font-weight: 400;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--surface);
+}
+
+.fitText {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.calRow--metric .calCell:not(.calLabel) .fitText {
+  color: var(--accent);
+}
+
+.calRow[data-row-key="block"] .calLabel .fitText,
+.calRow[data-row-key="monotony"] .calLabel .fitText,
+.calRow[data-row-key="acwr"] .calLabel .fitText {
+  color: #000000;
+}
+
+.calRow[data-row-key="block"] .calSelect,
+.calRow[data-row-key="block"] .calSelect option {
+  color: #000000;
+}
+
+.calRow[data-row-key="monotony"] .calCell:not(.calLabel) .fitText,
+.calRow[data-row-key="acwr"] .calCell:not(.calLabel) .fitText {
+  color: #000000;
+}
+
+.calSelectWrap {
+  width: 100%;
+  position: relative;
+  padding: 0 4px;
+}
+
+.calSelectWrap::after {
+  content: "▾";
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.calSelectWrap.calSelectWrap--wide::after {
+  content: none;
+  display: none;
+}
+
+.calSelectWrap.calSelectWrap--wide {
+  padding: 0 2px;
+}
+
+.calInputWrap {
+  width: 100%;
+  padding: 0 4px;
+}
+
+.calInput {
+  width: 100%;
+  height: var(--calControlH);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--accent);
+  font-size: var(--calFont);
+  border-radius: 8px;
+  text-align: center;
+  outline: none;
+}
+
+.calInput[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.calInput[type="number"]::-webkit-outer-spin-button,
+.calInput[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.calRow[data-row-key="volumeHrs"] .calInput {
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-color: transparent;
+  background: transparent;
+  border-radius: 0;
+}
+
+.calRow[data-row-key="volumeHrs"] .calInputWrap {
+  padding: 0;
+}
+
+.calRow[data-row-key="volumeHrs"] .calInput:hover,
+.calRow[data-row-key="volumeHrs"] .calInput:focus {
+  border-color: transparent;
+  background: transparent;
+}
+
+.calInput:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.calInput:focus {
+  border-color: rgba(29, 78, 216, 0.55);
+  background: rgba(29, 78, 216, 0.08);
+}
+
+.calSelect {
+  width: 100%;
+  height: var(--calControlH);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--accent);
+  font-size: calc(var(--calFont) + 1px);
+  font-weight: 400;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: center;
+  text-align-last: center;
+  padding-right: 14px;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+
+.calSelect option {
+  color: var(--accent);
+  background: var(--surface);
+}
+
+.calSelect.calSelect--wide {
+  font-size: calc(var(--calFont) - 2px);
+  font-weight: 400;
+  padding-left: 2px;
+  padding-right: 2px;
+}
+
+.calSelect:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.calSelect:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.phaseBtn {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
+.phaseBtn:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.raceCols {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 2px;
+  overflow: hidden;
+}
+
+.raceV {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.1;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+.raceV--more {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.calWeekBtn {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  border-radius: 8px;
+}
+
+.calWeekBtn:hover {
+  background: rgba(29, 78, 216, 0.06);
+}
+
+.calWeekBtn:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.calWeekBtn.is-selected {
+  background: var(--accentSoft);
+  color: var(--text);
+  font-weight: 400;
+}
+
+.weekSection {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.weekHeader {
+  border-bottom: 1px solid var(--border);
+  padding: 12px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.weekPicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.weekPicker select {
+  border: 1px solid var(--border);
+  padding: 7px 10px;
+  font-size: 12px;
+  background: var(--surface);
+  color: var(--accent);
+  border-radius: 10px;
+}
+
+.weekPicker select option {
+  color: var(--accent);
+  background: var(--surface);
+}
+
+.weekPicker select:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.weekDays {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  background: linear-gradient(to bottom, rgba(125, 255, 0, 0.05), rgba(125, 255, 0, 0));
+}
+
+.dayCard {
+  border: 1px solid var(--border);
+  border-radius: var(--radiusSm);
+  min-height: 74px;
+  padding: 12px;
+  position: relative;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}
+
+.dayCard.is-dragging {
+  opacity: 0.55;
+}
+
+.dayCard.is-dropTarget {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.dayDragHandle {
+  width: 22px;
+  height: 22px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(15, 23, 42, 0.03);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  user-select: none;
+}
+
+.dayDragHandle:active {
+  cursor: grabbing;
+}
+
+.dayTitle {
+  font-family: var(--fontDisplay);
+  font-size: 12px;
+  font-weight: 400;
+  margin-bottom: 0;
+  letter-spacing: 0.8px;
+  text-transform: none;
+}
+
+.dayTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 0;
+}
+
+.dayTitleLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dayTitleRight {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dayMoveControls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dayMoveBtn {
+  width: 22px;
+  height: 22px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.dayMoveBtn:hover {
+  border-color: #d1d5db;
+  background: rgba(17, 24, 39, 0.03);
+}
+
+.dayMoveBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.dayMoveBtn:disabled:hover {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.dayMoveBtn:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.dayDate {
+  font-family: var(--fontDisplay);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.6px;
+  color: var(--accent);
+  padding: 4px 10px;
+  border: 1px solid var(--ring);
+  background: rgba(29, 78, 216, 0.06);
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.dayWorkoutControls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dayWorkoutSelect {
+  width: 74px;
+}
+
+.dayWorkouts {
+  display: grid;
+  gap: 10px;
+}
+
+.dayMeta {
+  display: flex;
+  gap: 26px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.dayRaces {
+  margin-top: 10px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 0;
+}
+
+.dayRaces__names {
+  color: var(--accent);
+}
+
+.dayField {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dayMiniInput,
+.dayMiniSelect {
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0 10px;
+  font-size: 12px;
+  background: var(--surface);
+  color: var(--accent);
+}
+
+.dayMiniSelect option {
+  color: var(--accent);
+  background: var(--surface);
+}
+
+.dayMiniInput {
+  width: 76px;
+}
+
+.dayMiniInput:focus-visible,
+.dayMiniSelect:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.dayAction {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  border: 1px solid var(--border);
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+  border-radius: 10px;
+}
+
+.dayAction:hover {
+  border-color: #d1d5db;
+  background: rgba(17, 24, 39, 0.03);
+}
+
+.dayAction:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.chartsPlaceholder {
+  border: 1px solid var(--border);
+  padding: 16px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.chartsPlaceholder__title {
+  font-weight: 400;
+  margin-bottom: 8px;
+}
+
+.chartsGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.paceGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.paceIntro__title {
+  font-family: var(--fontDisplay);
+  font-size: 13px;
+  letter-spacing: 0.9px;
+  margin-bottom: 4px;
+}
+
+.paceForm {
+  display: grid;
+  gap: 10px;
+}
+
+.paceField {
+  display: grid;
+  gap: 6px;
+}
+
+.paceTimeGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.paceTimeInput {
+  width: 100%;
+  min-width: 0;
+}
+
+.paceActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.paceTable {
+  display: grid;
+  gap: 8px;
+}
+
+.paceTableRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.paceTableRow--header {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.paceTableCell {
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paceTableCell--right {
+  text-align: right;
+}
+
+.chartCard {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.chartCard--clickable {
+  cursor: pointer;
+}
+
+.chartCard--clickable:hover {
+  border-color: #d1d5db;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08);
+}
+
+.chartCard__title {
+  font-family: var(--fontDisplay);
+  font-weight: 400;
+  font-size: 13px;
+  letter-spacing: 0.9px;
+  text-transform: none;
+}
+
+.chartModal {
+  width: min(1100px, 100%);
+}
+
+.chartModal__body {
+  width: 100%;
+}
+
+.chartSvg--modal {
+  border: none;
+}
+
+.chartSvg {
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.chartBand--red {
+  fill: rgba(239, 68, 68, 0.18);
+}
+
+.chartBand--gray {
+  fill: rgba(148, 163, 184, 0.2);
+}
+
+.chartBand--blue {
+  fill: rgba(29, 78, 216, 0.14);
+}
+
+.chartBand--green {
+  fill: rgba(16, 185, 129, 0.16);
+}
+
+.chartAxis line {
+  stroke: rgba(255, 255, 255, 0.14);
+  stroke-width: 1;
+}
+
+.chartTicks line {
+  stroke: rgba(255, 255, 255, 0.14);
+  stroke-width: 1;
+}
+
+.chartTicks text {
+  fill: var(--muted);
+  font-size: 10px;
+}
+
+.chartUnit {
+  fill: var(--muted);
+  font-size: 10px;
+}
+
+.chartBar {
+  fill: var(--accent);
+  opacity: 0.9;
+}
+
+.chartLine {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.2;
+}
+
+.chartLine--a {
+  stroke: var(--accent);
+}
+
+.chartLine--b {
+  stroke: var(--text);
+}
+
+.chartDot {
+  fill: var(--accent);
+}
+
+.chartLegend text {
+  fill: var(--muted);
+  font-size: 10px;
+}
+
+.chartLegend__swatch.chartLine--a {
+  fill: var(--accent);
+}
+
+.chartLegend__swatch.chartLine--b {
+  fill: var(--text);
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  z-index: 50;
+}
+
+.modal {
+  width: min(640px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.22);
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.volumeModal {
+  width: min(720px, 100%);
+}
+
+.volumeForm {
+  display: grid;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.volumeRow {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  align-items: center;
+  gap: 12px;
+}
+
+.volumeLabel {
+  font-family: var(--fontDisplay);
+  font-size: 12px;
+  letter-spacing: 0.7px;
+}
+
+.volumeInput {
+  width: 100%;
+}
+
+.volumeToggle {
+  display: inline-flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.volumeToggleBtn {
+  min-width: 44px;
+  height: 36px;
+  border-radius: 999px;
+}
+
+.volumeToggleBtn.is-active {
+  background: var(--accentSoft);
+  border-color: rgba(29, 78, 216, 0.25);
+}
+
+.weekModal {
+  width: min(980px, 100%);
+  max-height: calc(100vh - 36px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.weekModal .weekDays {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.modal__title {
+  font-weight: 400;
+  font-size: 14px;
+}
+
+.modal__subtitle {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.raceList {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px;
+  background: var(--surface2);
+  min-height: 54px;
+  display: grid;
+  gap: 8px;
+}
+
+.raceRow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.raceRow__name {
+  font-size: 12px;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.iconBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.iconBtn--toolbar {
+  width: 34px;
+  height: 34px;
+}
+
+.iconBtn--toolbar svg {
+  width: 18px;
+  height: 18px;
+}
+
+.iconBtn:hover {
+  border-color: #d1d5db;
+  background: rgba(17, 24, 39, 0.03);
+}
+
+.iconBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.iconBtn:disabled:hover {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.iconBtn:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.formRow {
+  display: grid;
+  grid-template-columns: 1fr 170px 100px auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.input {
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0 12px;
+  font-size: 12px;
+  background: var(--surface);
+  color: var(--accent);
+}
+
+.input option {
+  color: var(--accent);
+  background: var(--surface);
+}
+
+.input::placeholder {
+  color: var(--accent);
+}
+
+.input:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.modal__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 920px) {
+  .planTop {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+  .planTop__center {
+    text-align: left;
+  }
+  .planTop__right {
+    justify-content: flex-start;
+  }
+  .tabs {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 560px) {
+  :root {
+    --cellW: 34px;
+    --labelW: 108px;
+  }
+  .page {
+    padding: 14px 12px 22px;
+  }
+  .dayMeta {
+    gap: 14px;
+  }
+  .formRow {
+    grid-template-columns: 1fr;
+  }
+  .volumeRow {
+    grid-template-columns: 1fr;
+    justify-items: stretch;
+  }
+  .volumeToggle {
+    justify-content: flex-start;
+  }
+  .paceGrid {
+    grid-template-columns: 1fr;
+  }
+}
