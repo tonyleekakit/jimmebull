@@ -1,10 +1,11 @@
+const SERVER_VERSION = "ai-plan-2025-12-27-3";
+
 function jsonResponse(data, init) {
   const headers = new Headers(init?.headers || {});
   if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json; charset=utf-8");
+  if (!headers.has("X-Server-Version")) headers.set("X-Server-Version", SERVER_VERSION);
   return new Response(JSON.stringify(data), { ...init, headers });
 }
-
-const SERVER_VERSION = "ai-plan-2025-12-27-3";
 
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
@@ -555,4 +556,3 @@ export async function onRequestPost(ctx) {
 
   return jsonResponse({ updates: sanitized, serverVersion: SERVER_VERSION }, { status: 200 });
 }
-Fix AI JSON salvage
