@@ -4,6 +4,8 @@ function jsonResponse(data, init) {
   return new Response(JSON.stringify(data), { ...init, headers });
 }
 
+const SERVER_VERSION = "ai-plan-2025-12-27-3";
+
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
@@ -244,7 +246,7 @@ function parseFirstValidUpdates(text) {
       if (ch === "}" || ch === "]") safeEnds.push(i);
     }
 
-    const maxTries = 30;
+    const maxTries = 300;
     for (let t = 0; t < maxTries && safeEnds.length; t++) {
       const endIndex = safeEnds.pop();
       const cut = endIndex + 1;
@@ -514,7 +516,7 @@ export async function onRequestPost(ctx) {
     const updates = parseFirstValidUpdates(text);
     if (!updates) {
       return jsonResponse(
-        { error: "Invalid updates JSON", rawText: String(text).slice(0, 3000), range: { startIndex, endIndex } },
+        { error: "Invalid updates JSON", rawText: String(text).slice(0, 3000), range: { startIndex, endIndex }, serverVersion: SERVER_VERSION },
         { status: 502 },
       );
     }
@@ -551,5 +553,6 @@ export async function onRequestPost(ctx) {
       .filter((w) => Number.isFinite(w.index)),
   };
 
-  return jsonResponse({ updates: sanitized }, { status: 200 });
+  return jsonResponse({ updates: sanitized, serverVersion: SERVER_VERSION }, { status: 200 });
 }
+Fix AI JSON salvage
