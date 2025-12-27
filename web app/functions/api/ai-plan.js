@@ -15,8 +15,24 @@ function extractFirstJsonBlock(text) {
   return String(m[1] || "");
 }
 
+function normalizeJsonLike(text) {
+  let s = String(text || "");
+  s = s.replace(/^\uFEFF/, "");
+  s = s.replace(/[\u200B-\u200D\uFEFF]/g, "");
+  s = s.replace(/\u2028|\u2029/g, "\n");
+  s = s.replace(/[“”]/g, "\"").replace(/[‘’]/g, "'");
+  s = s.replace(/,\s*([}\]])/g, "$1");
+  return s.trim();
+}
+
 function parseFirstValidUpdates(text) {
-  const s = extractFirstJsonBlock(text);
+  const block = normalizeJsonLike(extractFirstJsonBlock(text));
+  try {
+    const direct = JSON.parse(block);
+    if (direct && typeof direct === "object" && Array.isArray(direct.weeks)) return direct;
+  } catch {}
+
+  const s = block;
   const n = s.length;
   for (let i = 0; i < n; i++) {
     if (s[i] !== "{") continue;
@@ -42,7 +58,7 @@ function parseFirstValidUpdates(text) {
       if (ch === "{") depth++;
       if (ch === "}") depth--;
       if (depth === 0) {
-        const candidate = s.slice(i, j + 1).trim();
+        const candidate = normalizeJsonLike(s.slice(i, j + 1));
         try {
           const obj = JSON.parse(candidate);
           if (obj && typeof obj === "object" && Array.isArray(obj.weeks)) return obj;
@@ -126,7 +142,12 @@ async function runWorkersAi(prompt, env) {
 
   let out = null;
   try {
-    out = await ai.run(model, { messages: [{ role: "user", content: prompt }] });
+    out = await ai.run(model, {
+      messages: [
+        { role: "system", content: "Return only valid JSON. Do not use markdown or code fences. Do not add extra text." },
+        { role: "user", content: prompt },
+      ],
+    });
   } catch (e) {
     const msg = typeof e?.message === "string" && e.message.trim() ? e.message.trim() : "Workers AI error";
     return { ok: false, status: 502, error: msg };
