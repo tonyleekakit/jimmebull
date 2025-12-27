@@ -8,12 +8,50 @@ function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
-function extractJsonObject(text) {
+function extractFirstJsonBlock(text) {
   const s = String(text || "");
-  const start = s.indexOf("{");
-  const end = s.lastIndexOf("}");
-  if (start === -1 || end === -1 || end <= start) return null;
-  return s.slice(start, end + 1);
+  const m = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (!m) return s;
+  return String(m[1] || "");
+}
+
+function parseFirstValidUpdates(text) {
+  const s = extractFirstJsonBlock(text);
+  const n = s.length;
+  for (let i = 0; i < n; i++) {
+    if (s[i] !== "{") continue;
+    let depth = 0;
+    let inStr = false;
+    let esc = false;
+    for (let j = i; j < n; j++) {
+      const ch = s[j];
+      if (inStr) {
+        if (esc) {
+          esc = false;
+        } else if (ch === "\\") {
+          esc = true;
+        } else if (ch === "\"") {
+          inStr = false;
+        }
+        continue;
+      }
+      if (ch === "\"") {
+        inStr = true;
+        continue;
+      }
+      if (ch === "{") depth++;
+      if (ch === "}") depth--;
+      if (depth === 0) {
+        const candidate = s.slice(i, j + 1).trim();
+        try {
+          const obj = JSON.parse(candidate);
+          if (obj && typeof obj === "object" && Array.isArray(obj.weeks)) return obj;
+        } catch {}
+        break;
+      }
+    }
+  }
+  return null;
 }
 
 async function checkRateLimit(request, env) {
@@ -154,8 +192,8 @@ export async function onRequestPost(ctx) {
     "- 比賽當週要反映優先級：A 賽前要有減量（Deload/Peaking），比賽日可安排高強度但總量要合理",
     "- 不要更改 races / priority / monday 等資料",
     "",
-    "回覆格式：只輸出 JSON（不要 markdown、不要 code block）。必須符合：",
-    '{ "weeks": [ { "index": 0, "block": "Base", "phases": ["Aerobic Endurance"], "volumeHrs": "5.0", "sessions": [ { "dayIndex": 0, "durationMinutes": 40, "rpe": 3, "zone": 2 } ] } ] }',
+    "回覆格式：只輸出 JSON（不要 markdown、不要 code block、不要 ```）。",
+    "JSON 結構：{ weeks: [ { index:number(0-51), block:string, phases:string[], volumeHrs:string, sessions:[{ dayIndex:number(0-6), durationMinutes:number, rpe:number(1-10), zone:number(1-6) }] } ] }",
     "",
     notes ? `用家補充要求：${notes}` : "",
     "現況 JSON：",
@@ -176,21 +214,8 @@ export async function onRequestPost(ctx) {
 
   const text = typeof gen?.text === "string" ? gen.text : "";
 
-  const jsonStr = extractJsonObject(text);
-  if (!jsonStr) {
-    return jsonResponse({ error: "Model returned no JSON", rawText: String(text).slice(0, 3000) }, { status: 502 });
-  }
-
-  let updates = null;
-  try {
-    updates = JSON.parse(jsonStr);
-  } catch {
-    updates = null;
-  }
-
-  if (!updates || typeof updates !== "object" || !Array.isArray(updates.weeks)) {
-    return jsonResponse({ error: "Invalid updates JSON", rawText: String(text).slice(0, 3000) }, { status: 502 });
-  }
+  const updates = parseFirstValidUpdates(text);
+  if (!updates) return jsonResponse({ error: "Invalid updates JSON", rawText: String(text).slice(0, 3000) }, { status: 502 });
 
   const sanitized = {
     weeks: updates.weeks
