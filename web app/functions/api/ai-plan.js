@@ -48,24 +48,8 @@ function stripToLikelyJson(text) {
   return s.slice(Math.min(iObj, iArr));
 }
 
-function repairJsonLike(text) {
-  let s = normalizeJsonLike(stripToLikelyJson(text));
-  if (!s) return s;
-
-  s = s.replace(/\bNone\b/g, "null").replace(/\bTrue\b/g, "true").replace(/\bFalse\b/g, "false");
-
-  s = s.replace(/(^|[{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)/g, '$1"$2"$3');
-
-  s = s.replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, (_, inner) => `"${String(inner).replace(/"/g, '\\"')}"`);
-
-  s = s.replace(/([\[,]\s*)([A-Za-z][A-Za-z0-9 _-]*)(\s*(?=,|\]))/g, (m, p1, word, p3) => {
-    const v = String(word).trim();
-    if (!v) return m;
-    if (v === "true" || v === "false" || v === "null") return `${p1}${v}${p3}`;
-    if (/^-?\d+(\.\d+)?$/.test(v)) return `${p1}${v}${p3}`;
-    return `${p1}"${v.replace(/"/g, '\\"')}"${p3}`;
-  });
-
+function closeUnbalancedBrackets(text) {
+  let s = String(text || "");
   const stack = [];
   let inStr = false;
   let quote = "";
@@ -106,6 +90,28 @@ function repairJsonLike(text) {
     s += top === "{" ? "}" : "]";
   }
 
+  return s;
+}
+
+function repairJsonLike(text) {
+  let s = normalizeJsonLike(stripToLikelyJson(text));
+  if (!s) return s;
+
+  s = s.replace(/\bNone\b/g, "null").replace(/\bTrue\b/g, "true").replace(/\bFalse\b/g, "false");
+
+  s = s.replace(/(^|[{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)/g, '$1"$2"$3');
+
+  s = s.replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, (_, inner) => `"${String(inner).replace(/"/g, '\\"')}"`);
+
+  s = s.replace(/([\[,]\s*)([A-Za-z][A-Za-z0-9 _-]*)(\s*(?=,|\]))/g, (m, p1, word, p3) => {
+    const v = String(word).trim();
+    if (!v) return m;
+    if (v === "true" || v === "false" || v === "null") return `${p1}${v}${p3}`;
+    if (/^-?\d+(\.\d+)?$/.test(v)) return `${p1}${v}${p3}`;
+    return `${p1}"${v.replace(/"/g, '\\"')}"${p3}`;
+  });
+
+  s = closeUnbalancedBrackets(s);
   return normalizeJsonLike(s);
 }
 
@@ -126,6 +132,54 @@ function parseFirstValidUpdates(text) {
 
   const direct = tryParseOne(block) || tryParseOne(repaired);
   if (direct) return direct;
+
+  const trySalvageByTruncation = (candidate) => {
+    if (!candidate) return null;
+    const s = String(candidate);
+
+    const safeEnds = [];
+    let inStr = false;
+    let quote = "";
+    let esc = false;
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (inStr) {
+        if (esc) {
+          esc = false;
+          continue;
+        }
+        if (ch === "\\") {
+          esc = true;
+          continue;
+        }
+        if (ch === quote) {
+          inStr = false;
+          quote = "";
+        }
+        continue;
+      }
+      if (ch === "\"" || ch === "'") {
+        inStr = true;
+        quote = ch;
+        continue;
+      }
+      if (ch === "}" || ch === "]") safeEnds.push(i);
+    }
+
+    const maxTries = 30;
+    for (let t = 0; t < maxTries && safeEnds.length; t++) {
+      const endIndex = safeEnds.pop();
+      const cut = endIndex + 1;
+      const sliced = s.slice(0, cut);
+      const closed = normalizeJsonLike(closeUnbalancedBrackets(sliced));
+      const parsed = tryParseOne(closed);
+      if (parsed) return parsed;
+    }
+    return null;
+  };
+
+  const salvaged = trySalvageByTruncation(repaired) || trySalvageByTruncation(block);
+  if (salvaged) return salvaged;
 
   const s = repaired || block;
   const n = s.length;
