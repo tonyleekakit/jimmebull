@@ -93,6 +93,84 @@ function closeUnbalancedBrackets(text) {
   return s;
 }
 
+function extractWeeksFromDamagedText(text) {
+  const src = String(text || "");
+  if (!src.trim()) return null;
+
+  const pickStartIndex = () => {
+    const m = src.match(/"weeks"\s*:/);
+    if (m && typeof m.index === "number") return m.index;
+    const m2 = src.match(/\bweeks\s*:/);
+    if (m2 && typeof m2.index === "number") return m2.index;
+    return -1;
+  };
+
+  const startsAtWeeksKey = pickStartIndex();
+  const startSearch = startsAtWeeksKey >= 0 ? startsAtWeeksKey : 0;
+  const arrStart = src.indexOf("[", startSearch);
+  if (arrStart < 0) return null;
+
+  const weeks = [];
+  const stack = ["["];
+  let inStr = false;
+  let quote = "";
+  let esc = false;
+  let objStart = -1;
+
+  for (let i = arrStart + 1; i < src.length; i++) {
+    const ch = src[i];
+    if (inStr) {
+      if (esc) {
+        esc = false;
+        continue;
+      }
+      if (ch === "\\") {
+        esc = true;
+        continue;
+      }
+      if (ch === quote) {
+        inStr = false;
+        quote = "";
+      }
+      continue;
+    }
+
+    if (ch === "\"" || ch === "'") {
+      inStr = true;
+      quote = ch;
+      continue;
+    }
+
+    if (ch === "[" || ch === "{") {
+      if (ch === "{" && stack.length === 1 && stack[0] === "[" && objStart === -1) objStart = i;
+      stack.push(ch);
+      continue;
+    }
+
+    if (ch === "]" || ch === "}") {
+      const top = stack[stack.length - 1];
+      if ((ch === "]" && top === "[") || (ch === "}" && top === "{")) {
+        stack.pop();
+        if (ch === "}" && objStart >= 0 && stack.length === 1 && stack[0] === "[") {
+          const objText = src.slice(objStart, i + 1);
+          const repairedObjText = repairJsonLike(objText);
+          try {
+            const obj = JSON.parse(repairedObjText);
+            if (obj && typeof obj === "object" && Number.isFinite(Number(obj.index))) {
+              weeks.push(obj);
+            }
+          } catch {}
+          objStart = -1;
+        }
+        if (stack.length === 0) break;
+      }
+    }
+  }
+
+  if (!weeks.length) return null;
+  return { weeks };
+}
+
 function repairJsonLike(text) {
   let s = normalizeJsonLike(stripToLikelyJson(text));
   if (!s) return s;
@@ -180,6 +258,9 @@ function parseFirstValidUpdates(text) {
 
   const salvaged = trySalvageByTruncation(repaired) || trySalvageByTruncation(block);
   if (salvaged) return salvaged;
+
+  const extracted = extractWeeksFromDamagedText(repaired) || extractWeeksFromDamagedText(block);
+  if (extracted) return extracted;
 
   const s = repaired || block;
   const n = s.length;
