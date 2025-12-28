@@ -1061,7 +1061,7 @@ function buildAutoNoteBodyForPlan(plan) {
       if (s) lines.push(s);
     });
   }
-  if (plan?.minutes) lines.push(`總時長：${Math.round(Number(plan.minutes) || 0)} 分鐘`);
+  if (plan?.minutes) lines.push(`主課時長：${Math.round(Number(plan.minutes) || 0)} 分鐘`);
   if (plan?.rpeText) lines.push(`RPE：${plan.rpeText}`);
   return lines.join("\n").trim();
 }
@@ -1075,7 +1075,7 @@ function sessionPlanForDay(weekIndex, day, ctx) {
   const rpeOverride = Number.isFinite(Number(day?.rpeOverride)) ? clamp(Number(day.rpeOverride), 1, 10) : null;
 
   if (type === "Rest" || minutes <= 0) {
-    return { zone: 1, rpe: 1, noteBody: buildAutoNoteBodyForPlan({ title: "休息／伸展", minutes: 0, rpeText: "—" }) };
+    return { zone: 1, rpe: 1, workoutMinutes: 0, noteBody: buildAutoNoteBodyForPlan({ title: "休息／伸展", minutes: 0, rpeText: "—" }) };
   }
 
   if (type === "Race" && race) {
@@ -1084,13 +1084,15 @@ function sessionPlanForDay(weekIndex, day, ctx) {
     const meta = [distText, kindText].filter(Boolean).join(" · ");
     const title = meta ? `比賽：${race.name}（${meta}）` : `比賽：${race.name}`;
     const details = ["熱身 15' + 比賽 + 放鬆 10'"];
-    return { zone: 6, rpe: rpeOverride ?? 10, noteBody: buildAutoNoteBodyForPlan({ title, details, minutes, rpeText: "9–10" }) };
+    const workoutMinutes = Math.max(0, minutes - 25);
+    return { zone: 6, rpe: rpeOverride ?? 10, workoutMinutes, noteBody: buildAutoNoteBodyForPlan({ title, details, minutes: workoutMinutes, rpeText: "9–10" }) };
   }
 
   if (type === "Long") {
     return {
       zone: 2,
       rpe: rpeOverride ?? 3,
+      workoutMinutes: minutes,
       noteBody: buildAutoNoteBodyForPlan({
         title: "長課（有氧耐力）",
         details: ["保持輕鬆，避免配速拉高"],
@@ -1102,14 +1104,19 @@ function sessionPlanForDay(weekIndex, day, ctx) {
 
   if (type === "Easy") {
     const easyRpeText = block === "Deload" || block === "Transition" ? "2–4" : "3–4";
-    return { zone: 2, rpe: rpeOverride ?? (block === "Deload" || block === "Transition" ? 2 : 3), noteBody: buildAutoNoteBodyForPlan({ title: "有氧耐力", minutes, rpeText: easyRpeText }) };
+    return {
+      zone: 2,
+      rpe: rpeOverride ?? (block === "Deload" || block === "Transition" ? 2 : 3),
+      workoutMinutes: minutes,
+      noteBody: buildAutoNoteBodyForPlan({ title: "有氧耐力", minutes, rpeText: easyRpeText }),
+    };
   }
 
   const idx = phaseStreakIndex(weekIndex, phase);
   if (phase === "Tempo") {
     const main = clamp(30 + idx * 5, 30, 45);
     const details = [`主課：節奏跑 ${main}'（可每週 +5'，最多 45'）`, "其餘時間作熱身／放鬆"];
-    return { zone: 3, rpe: rpeOverride ?? 6, noteBody: buildAutoNoteBodyForPlan({ title: "節奏", details, minutes, rpeText: "5–6" }) };
+    return { zone: 3, rpe: rpeOverride ?? 6, workoutMinutes: main, noteBody: buildAutoNoteBodyForPlan({ title: "節奏", details, minutes: main, rpeText: "5–6" }) };
   }
   if (phase === "Threshold") {
     const repMin = clamp(6 + Math.floor(idx / 2) * 2, 6, 12);
@@ -1119,14 +1126,26 @@ function sessionPlanForDay(weekIndex, day, ctx) {
     const details = [`主課：${sets} × ${repMin}'（跑/休 4:1，休 ${restMin}'）`];
     if (extra) details.push(`進階：完成 2 組後，加 ${extra}' 乳酸跑`);
     details.push("其餘時間作熱身／放鬆");
-    return { zone: 4, rpe: rpeOverride ?? 8, noteBody: buildAutoNoteBodyForPlan({ title: "乳酸閾值", details, minutes, rpeText: "7–8" }) };
+    const workoutMinutes = Math.max(0, sets * repMin + Math.max(0, sets - 1) * restMin + extra);
+    return {
+      zone: 4,
+      rpe: rpeOverride ?? 8,
+      workoutMinutes,
+      noteBody: buildAutoNoteBodyForPlan({ title: "乳酸閾值", details, minutes: workoutMinutes, rpeText: "7–8" }),
+    };
   }
   if (phase === "VO2Max") {
     const workTotal = clamp(5 + idx * 2, 5, 15);
     const repMin = workTotal <= 8 ? 2 : workTotal <= 12 ? 3 : 4;
     const reps = Math.max(1, Math.round(workTotal / repMin));
     const details = [`主課：${reps} × ${repMin}'（跑/休 1:1）`, `總強度：約 ${clamp(reps * repMin, 5, 15)}'（逐週由 5' 加到 15'）`, "其餘時間作熱身／放鬆"];
-    return { zone: 5, rpe: rpeOverride ?? 9, noteBody: buildAutoNoteBodyForPlan({ title: "最大攝氧量", details, minutes, rpeText: "8–9" }) };
+    const workoutMinutes = Math.max(0, reps * repMin * 2);
+    return {
+      zone: 5,
+      rpe: rpeOverride ?? 9,
+      workoutMinutes,
+      noteBody: buildAutoNoteBodyForPlan({ title: "最大攝氧量", details, minutes: workoutMinutes, rpeText: "8–9" }),
+    };
   }
   if (phase === "Anaerobic") {
     const workTotal = clamp(5 + idx * 2, 5, 15);
@@ -1134,10 +1153,16 @@ function sessionPlanForDay(weekIndex, day, ctx) {
     const repMin = repSec === 30 ? 0.5 : 1;
     const reps = Math.max(1, Math.round(workTotal / repMin));
     const details = [`主課：${reps} × ${repSec}s（跑/休 1:1）`, `總強度：約 ${clamp(Math.round(reps * repMin), 5, 15)}'（逐週由 5' 加到 15'）`, "其餘時間作熱身／放鬆"];
-    return { zone: 6, rpe: rpeOverride ?? 10, noteBody: buildAutoNoteBodyForPlan({ title: "無氧", details, minutes, rpeText: "9–10" }) };
+    const workoutMinutes = Math.max(0, Math.round(reps * repMin * 2));
+    return {
+      zone: 6,
+      rpe: rpeOverride ?? 10,
+      workoutMinutes,
+      noteBody: buildAutoNoteBodyForPlan({ title: "無氧", details, minutes: workoutMinutes, rpeText: "9–10" }),
+    };
   }
 
-  return { zone: 2, rpe: rpeOverride ?? 3, noteBody: buildAutoNoteBodyForPlan({ title: "有氧耐力", minutes, rpeText: "3–4" }) };
+  return { zone: 2, rpe: rpeOverride ?? 3, workoutMinutes: minutes, noteBody: buildAutoNoteBodyForPlan({ title: "有氧耐力", minutes, rpeText: "3–4" }) };
 }
 
 function clampDayPlanMinutes(plans, targetMinutes, options) {
@@ -1319,10 +1344,11 @@ function applyCoachDayPlanRules(range) {
       const plan = result.plans[d];
       const isQuality = plan.type === "Quality";
       const dayPlan = sessionPlanForDay(i, plan, { block: result.block });
+      const durationMinutes = Math.max(0, Math.round(Number(dayPlan?.workoutMinutes ?? plan.minutes) || 0));
 
       if (allowOverwrite) {
         s.workoutsCount = 1;
-        s.workouts = [{ duration: Math.max(0, Math.round(Number(plan.minutes) || 0)), rpe: dayPlan.rpe }];
+        s.workouts = [{ duration: durationMinutes, rpe: dayPlan.rpe }];
         s.zone = dayPlan.zone;
         ensureSessionWorkouts(s);
         const nextNote = mergeAutoNote(s.note, dayPlan.noteBody);
