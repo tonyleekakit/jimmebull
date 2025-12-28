@@ -2317,11 +2317,17 @@ function applyAnnualVolumeToWeeks(annualVolumeHrs) {
     return count ? sum / count : 0;
   };
 
-  const boundsForWeek = (block, prev, chronic4, baseAnchor) => {
+  const boundsForWeek = (block, prev, chronic4) => {
     const v = normalizeBlockValue(block || "") || "Base";
     const p = Number.isFinite(prev) && prev > 0 ? prev : 1;
     const c = Number.isFinite(chronic4) && chronic4 > 0 ? chronic4 : p;
-    const anchor = Number.isFinite(baseAnchor) && baseAnchor > 0 ? baseAnchor : null;
+
+    if (v === "Deload") {
+      const lo = Math.max(0.01, c * 0.5);
+      const hi = Math.max(lo, c * 0.8);
+      const raw = c * 0.7;
+      return { min: lo, max: hi, raw };
+    }
 
     let desiredFactor = 1;
     let trendMinFactor = 0.97;
@@ -2334,30 +2340,18 @@ function applyAnnualVolumeToWeeks(annualVolumeHrs) {
       trendMaxFactor = 1.12;
       acwrLo = 0.9;
       acwrHi = 1.3;
-    } else if (v === "Build") {
-      desiredFactor = 1.12;
-      trendMinFactor = 0.94;
+    } else if (v === "Build" || v === "Transition") {
+      desiredFactor = 1.0;
+      trendMinFactor = 0.97;
       trendMaxFactor = 1.03;
-      acwrLo = 0.95;
-      acwrHi = 1.3;
-    } else if (v === "Transition") {
-      desiredFactor = 0.86;
-      trendMinFactor = 0.75;
-      trendMaxFactor = 0.95;
-      acwrLo = 0.7;
-      acwrHi = 1.0;
+      acwrLo = 0.85;
+      acwrHi = 1.25;
     } else if (v === "Peak") {
       desiredFactor = 0.9;
       trendMinFactor = 0.85;
       trendMaxFactor = 0.98;
       acwrLo = 0.8;
       acwrHi = 1.05;
-    } else if (v === "Deload") {
-      desiredFactor = 0.78;
-      trendMinFactor = 0.7;
-      trendMaxFactor = 0.9;
-      acwrLo = 0.7;
-      acwrHi = 0.95;
     } else {
       desiredFactor = 1.0;
       trendMinFactor = 0.97;
@@ -2368,21 +2362,7 @@ function applyAnnualVolumeToWeeks(annualVolumeHrs) {
 
     let lo = Math.max(0.01, p * trendMinFactor, c * acwrLo);
     let hi = Math.max(lo, Math.min(p * trendMaxFactor, c * acwrHi));
-    let raw = v === "Build" || v === "Deload" ? c * desiredFactor : p * desiredFactor;
-
-    if (v === "Build" && anchor) {
-      const cap = anchor * 0.98;
-      hi = Math.min(hi, cap);
-      raw = Math.min(raw, cap);
-      lo = Math.min(lo, hi);
-    }
-
-    if (v === "Deload") {
-      const cap = c * 0.79;
-      hi = Math.min(hi, cap);
-      raw = Math.min(raw, cap);
-      lo = Math.min(lo, hi);
-    }
+    let raw = p * desiredFactor;
 
     return { min: lo, max: hi, raw };
   };
@@ -2392,13 +2372,7 @@ function applyAnnualVolumeToWeeks(annualVolumeHrs) {
   for (let i = 1; i < 52; i++) {
     const prev = shape[i - 1] || 1;
     const chronic4 = meanPrev(shape, i, 4) || prev;
-    let baseAnchor = null;
-    if (blocks[i] === "Build") {
-      let j = i - 1;
-      while (j >= 0 && blocks[j] === "Build") j--;
-      if (j >= 0 && blocks[j] === "Base") baseAnchor = shape[j] || null;
-    }
-    const b = boundsForWeek(blocks[i], prev, chronic4, baseAnchor);
+    const b = boundsForWeek(blocks[i], prev, chronic4);
     shape[i] = clamp(b.raw, b.min, b.max);
   }
 
