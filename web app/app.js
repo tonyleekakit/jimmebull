@@ -567,32 +567,48 @@ function applyCoachPhaseRules() {
   return changed;
 }
 
-const AUTO_NOTE_START = "【自動課表】";
-const AUTO_NOTE_END = "【/自動課表】";
+const AUTO_NOTE_START = "\u001F";
+const AUTO_NOTE_END = "\u001E";
+const LEGACY_AUTO_NOTE_START = "【自動課表】";
+const LEGACY_AUTO_NOTE_END = "【/自動課表】";
 
 function splitAutoNote(raw) {
   const note = typeof raw === "string" ? raw : "";
   const start = note.indexOf(AUTO_NOTE_START);
   const end = note.indexOf(AUTO_NOTE_END);
-  if (start < 0 || end < 0 || end < start) return { has: false, prefix: note, auto: "", suffix: "" };
-  const prefix = note.slice(0, start);
-  const auto = note.slice(start + AUTO_NOTE_START.length, end);
-  const suffix = note.slice(end + AUTO_NOTE_END.length);
-  return { has: true, prefix, auto, suffix };
+  if (start >= 0 && end >= 0 && end > start) {
+    const prefix = note.slice(0, start);
+    const auto = note.slice(start + AUTO_NOTE_START.length, end);
+    const suffix = note.slice(end + AUTO_NOTE_END.length);
+    return { has: true, legacy: false, prefix, auto, suffix };
+  }
+
+  const legacyStart = note.indexOf(LEGACY_AUTO_NOTE_START);
+  const legacyEnd = note.indexOf(LEGACY_AUTO_NOTE_END);
+  if (legacyStart < 0 || legacyEnd < 0 || legacyEnd < legacyStart) return { has: false, legacy: false, prefix: note, auto: "", suffix: "" };
+  const prefix = note.slice(0, legacyStart);
+  const auto = note.slice(legacyStart + LEGACY_AUTO_NOTE_START.length, legacyEnd);
+  const suffix = note.slice(legacyEnd + LEGACY_AUTO_NOTE_END.length);
+  return { has: true, legacy: true, prefix, auto, suffix };
 }
 
 function mergeAutoNote(raw, autoBody) {
   const parts = splitAutoNote(raw);
   const body = typeof autoBody === "string" ? autoBody.trim() : "";
-  const wrapped = body ? `${AUTO_NOTE_START}\n${body}\n${AUTO_NOTE_END}` : `${AUTO_NOTE_START}\n${AUTO_NOTE_END}`;
+  const wrapped = body ? `${AUTO_NOTE_START}${body}${AUTO_NOTE_END}` : "";
   if (!parts.has) {
     const base = typeof raw === "string" ? raw.trimEnd() : "";
+    if (!wrapped) return base.trim();
     return base ? `${base}\n\n${wrapped}` : wrapped;
   }
   const prefix = parts.prefix || "";
   const suffix = parts.suffix || "";
+  if (!wrapped) {
+    const out = `${prefix.trimEnd()}${suffix.trimStart() ? `\n\n${suffix.trimStart()}` : ""}`;
+    return out.trim();
+  }
   const out = `${prefix.trimEnd()}${prefix.trimEnd() ? "\n\n" : ""}${wrapped}${suffix.trimStart() ? `\n\n${suffix.trimStart()}` : ""}`;
-  return out.trim();
+  return out.trimEnd();
 }
 
 function isAutoOnlyNote(raw) {
@@ -3951,6 +3967,16 @@ function init() {
       w.block = normalizeBlockValue(w.block);
       if (!w.block) w.block = "Base";
       getWeekSessions(w);
+      if (Array.isArray(w.sessions) && w.sessions.length) {
+        w.sessions.forEach((s) => {
+          const raw = typeof s?.note === "string" ? s.note : "";
+          if (!raw) return;
+          const parts = splitAutoNote(raw);
+          if (!parts.has || !parts.legacy) return;
+          const next = mergeAutoNote(raw, parts.auto);
+          if (next !== raw) s.note = next;
+        });
+      }
     });
   }
   if (typeof persisted?.selectedWeekIndex === "number") {
