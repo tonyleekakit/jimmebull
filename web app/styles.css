@@ -389,6 +389,14 @@ body {
   color: #000000;
 }
 
+.calCell--alert {
+  background: #ef4444;
+}
+
+.calCell--alert .fitText {
+  color: #ffffff !important;
+}
+
 .calSelectWrap {
   width: 100%;
   position: relative;
