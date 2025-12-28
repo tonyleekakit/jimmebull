@@ -391,6 +391,71 @@ const BLOCK_LABELS_ZH = {
   Transition: "過渡",
 };
 
+function computeCoachBlockByRules() {
+  const out = new Array(52).fill("");
+  const rank = { "": 0, Base: 0, Deload: 0, Build: 1, Transition: 2, Peak: 3 };
+
+  const setBlock = (idx, block) => {
+    if (!Number.isFinite(idx) || idx < 0 || idx > 51) return;
+    const next = normalizeBlockValue(block || "");
+    if (!Object.prototype.hasOwnProperty.call(BLOCK_LABELS_ZH, next)) return;
+    const cur = out[idx] || "";
+    if ((rank[next] || 0) >= (rank[cur] || 0)) out[idx] = next;
+  };
+
+  state.weeks.forEach((w) => {
+    if (!w) return;
+    const p = String(w.priority || "").trim().toUpperCase();
+    if (p !== "A" && p !== "B") return;
+    if (!Array.isArray(w.races) || w.races.length === 0) return;
+    const idx = clamp(Number(w.index), 0, 51);
+
+    if (p === "A") {
+      setBlock(idx, "Peak");
+      setBlock(idx - 1, "Peak");
+      setBlock(idx + 1, "Transition");
+      for (let d = 2; d <= 4; d++) setBlock(idx - d, "Build");
+      return;
+    }
+
+    setBlock(idx, "Peak");
+    for (let d = 2; d <= 4; d++) setBlock(idx - d, "Build");
+  });
+
+  let baseCount = 0;
+  for (let i = 0; i < 52; i++) {
+    if (out[i]) {
+      baseCount = 0;
+      continue;
+    }
+    if (baseCount < 3) {
+      out[i] = "Base";
+      baseCount++;
+    } else {
+      out[i] = "Deload";
+      baseCount = 0;
+    }
+  }
+
+  return out;
+}
+
+function applyCoachBlockRules() {
+  if (!state || !Array.isArray(state.weeks) || state.weeks.length !== 52) return false;
+  const blocks = computeCoachBlockByRules();
+  let changed = false;
+  for (let i = 0; i < 52; i++) {
+    const w = state.weeks[i];
+    if (!w) continue;
+    const next = blocks[i] || "Base";
+    if (normalizeBlockValue(w.block || "") !== next) {
+      w.block = next;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 const PHASE_LABELS_ZH = {
   "Aerobic Endurance": "有氧耐力",
   Tempo: "節奏",
@@ -2258,6 +2323,8 @@ function reassignAllRacesByDate() {
   state.weeks.forEach((w) => {
     if (!Array.isArray(w.races) || w.races.length === 0) w.priority = "";
   });
+
+  applyCoachBlockRules();
 }
 
 function serializeStateForAiPlan() {
@@ -2346,6 +2413,7 @@ function applyAiPlanUpdates(updates) {
     }
   });
 
+  applyCoachBlockRules();
   recomputeFormulaVolumes();
   persistState();
   updateHeader();
@@ -2416,6 +2484,13 @@ function openAiPlanModal() {
     submit.textContent = "生成中…";
 
     try {
+      const blocksChanged = applyCoachBlockRules();
+      if (blocksChanged) {
+        persistState();
+        renderCalendar();
+        renderCharts();
+      }
+
       const resp = await fetch("/api/ai-plan", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -2522,6 +2597,7 @@ function openRaceInputModal() {
         if (w && (!Array.isArray(w.races) || w.races.length === 0)) {
           w.priority = "";
         }
+        applyCoachBlockRules();
         persistState();
         renderList();
         renderCalendar();
@@ -2589,6 +2665,7 @@ function openRaceInputModal() {
     date.value = "";
     priority.value = "";
     w.priority = racePriority;
+    applyCoachBlockRules();
     persistState();
     renderList();
     renderCalendar();
