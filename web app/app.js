@@ -1032,15 +1032,15 @@ function nextTargetRaceFromWeekIndex(fromWeekIndex) {
 function phaseStreakIndex(weekIndex, phase) {
   const p = String(phase || "").trim();
   if (!PHASE_OPTIONS.includes(p)) return 0;
-  let streak = 0;
-  for (let i = clamp(weekIndex, 0, 51); i >= 0; i--) {
+  const end = clamp(Number(weekIndex) || 0, 0, 51);
+  let count = 0;
+  for (let i = 0; i <= end; i++) {
     const w = state.weeks[i];
-    if (!w) break;
+    if (!w) continue;
     const phases = normalizePhases(w.phases);
-    if (!phases.includes(p)) break;
-    streak++;
+    if (phases.includes(p)) count++;
   }
-  return Math.max(0, streak - 1);
+  return Math.max(0, count - 1);
 }
 
 function estimateRaceMinutes(distanceKm, kind) {
