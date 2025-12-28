@@ -472,10 +472,26 @@ function phasesForRaceDistance(distanceKm, kind) {
   return ["Aerobic Endurance", "Tempo"];
 }
 
+function intensityRelevanceForRace(distanceKm, kind) {
+  const d = Number(distanceKm);
+  const k = String(kind || "").trim();
+  if (!Number.isFinite(d) || d <= 0) return ["Tempo", "Threshold", "VO2Max", "Anaerobic"];
+  if (k === "trail") {
+    if (d <= 12) return ["Threshold", "VO2Max", "Tempo", "Anaerobic"];
+    if (d <= 25) return ["Threshold", "Tempo", "VO2Max", "Anaerobic"];
+    return ["Tempo", "Threshold", "VO2Max", "Anaerobic"];
+  }
+  if (d <= 5) return ["VO2Max", "Anaerobic", "Threshold", "Tempo"];
+  if (d <= 12) return ["Threshold", "VO2Max", "Tempo", "Anaerobic"];
+  if (d <= 25) return ["Tempo", "Threshold", "VO2Max", "Anaerobic"];
+  return ["Tempo", "Threshold", "VO2Max", "Anaerobic"];
+}
+
 function computeCoachPhasesByRules() {
   const out = new Array(52).fill(null).map(() => []);
 
   const nextTargetRaceByWeek = new Array(52).fill(null);
+  const nextTargetRaceWeekIndex = new Array(52).fill(null);
   for (let i = 0; i < 52; i++) {
     for (let j = i; j < 52; j++) {
       const w = state.weeks[j];
@@ -495,6 +511,7 @@ function computeCoachPhasesByRules() {
       if (!candidates.length) continue;
       candidates.sort((a, b) => a.date.localeCompare(b.date));
       nextTargetRaceByWeek[i] = candidates[0];
+      nextTargetRaceWeekIndex[i] = j;
       break;
     }
   }
@@ -503,7 +520,15 @@ function computeCoachPhasesByRules() {
     const w = state.weeks[i];
     const block = normalizeBlockValue(w?.block || "");
     if (block === "Base") {
-      out[i] = ["Aerobic Endurance"];
+      const race = nextTargetRaceByWeek[i];
+      const raceWeekIdx = nextTargetRaceWeekIndex[i];
+      const buildPhases = normalizePhases(phasesForRaceDistance(race?.distanceKm, race?.kind));
+      const relevance = intensityRelevanceForRace(race?.distanceKm, race?.kind);
+      const candidates = relevance.filter((p) => !buildPhases.includes(p));
+      const weeksToRace = Number.isFinite(raceWeekIdx) ? Math.max(0, raceWeekIdx - i) : null;
+      const pickIdx = Number.isFinite(weeksToRace) ? clamp(Math.floor(weeksToRace / 4), 0, candidates.length - 1) : 0;
+      const extra = candidates[pickIdx] || candidates[0] || "";
+      out[i] = extra ? ["Aerobic Endurance", extra] : ["Aerobic Endurance"];
       continue;
     }
     if (block === "Deload") {
