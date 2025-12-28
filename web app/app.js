@@ -607,6 +607,365 @@ function plannedMinutesForWeek(week) {
   return Math.max(0, Math.round(v * 60));
 }
 
+function chronicAvgDailyLoadForWeekIndex(weekIndex) {
+  const idx = clamp(Number(weekIndex) || 0, 0, 51);
+  if (idx <= 0) return null;
+  let total = 0;
+  let days = 0;
+  for (let k = 1; k <= 4; k++) {
+    const w = state.weeks[idx - k];
+    if (!w) break;
+    const sessions = getWeekSessions(w);
+    sessions.forEach((s) => {
+      const t = getSessionTotals(s);
+      total += t.load;
+      days += 1;
+    });
+  }
+  if (days <= 0) return null;
+  const out = total / days;
+  return Number.isFinite(out) && out > 0 ? out : null;
+}
+
+function monotonyFromDailyLoads(dailyLoads) {
+  const loads = Array.isArray(dailyLoads) ? dailyLoads.map((x) => (Number.isFinite(Number(x)) ? Number(x) : 0)) : [];
+  const n = 7;
+  while (loads.length < n) loads.push(0);
+  if (loads.length > n) loads.length = n;
+  const total = loads.reduce((a, b) => a + b, 0);
+  const mean = total / n;
+  const variance = loads.reduce((sum, x) => sum + (x - mean) ** 2, 0) / n;
+  const stdDev = Math.sqrt(variance);
+  if (stdDev <= 0) return null;
+  return mean / stdDev;
+}
+
+function loadMetricsFromPlans(plans, chronicAvgDaily) {
+  const dailyLoads = new Array(7).fill(0);
+  for (let i = 0; i < 7; i++) {
+    const p = plans?.[i];
+    const minutes = Math.max(0, Math.round(Number(p?.minutes) || 0));
+    const rpe = clamp(Number(p?.rpeOverride) || 1, 1, 10);
+    dailyLoads[i] = minutes > 0 ? minutes * rpe : 0;
+  }
+  const meanLoad = dailyLoads.reduce((a, b) => a + b, 0) / 7;
+  const monotony = monotonyFromDailyLoads(dailyLoads);
+  const chronic = Number(chronicAvgDaily);
+  const acwr = Number.isFinite(chronic) && chronic > 0 ? meanLoad / chronic : null;
+  return { dailyLoads, meanLoad, monotony, acwr };
+}
+
+function rpeBoundsForPlan(plan, block) {
+  const t = String(plan?.type || "").trim();
+  const b = String(block || "").trim();
+  if (t === "Rest") return { min: 1, max: 1 };
+  if (t === "Race") return { min: 9, max: 10 };
+  if (t === "Easy" || t === "Long") {
+    if (b === "Deload" || b === "Transition") return { min: 2, max: 4 };
+    return { min: 3, max: 4 };
+  }
+  const phase = String(plan?.phase || "").trim();
+  if (phase === "Tempo") return { min: 5, max: 6 };
+  if (phase === "Threshold") return { min: 7, max: 8 };
+  if (phase === "VO2Max") return { min: 8, max: 9 };
+  if (phase === "Anaerobic") return { min: 9, max: 10 };
+  return { min: 5, max: 8 };
+}
+
+function defaultRpeForPlan(plan, block) {
+  const t = String(plan?.type || "").trim();
+  if (t === "Rest") return 1;
+  if (t === "Race") return 9;
+  const b = String(block || "").trim();
+  if (t === "Easy" || t === "Long") return b === "Deload" || b === "Transition" ? 2 : 3;
+  const phase = String(plan?.phase || "").trim();
+  if (phase === "Tempo") return 5;
+  if (phase === "Threshold") return 7;
+  if (phase === "VO2Max") return 8;
+  if (phase === "Anaerobic") return 9;
+  return 6;
+}
+
+function minuteCapsForPlan(plan, options) {
+  const t = String(plan?.type || "").trim();
+  const minLong = Number.isFinite(options?.minLong) ? options.minLong : 30;
+  const maxLong = Number.isFinite(options?.maxLong) ? options.maxLong : 180;
+  const minEasy = Number.isFinite(options?.minEasy) ? options.minEasy : 0;
+  const maxEasy = Number.isFinite(options?.maxEasy) ? options.maxEasy : 120;
+  const minQuality = Number.isFinite(options?.minQuality) ? options.minQuality : 30;
+  const maxQuality = Number.isFinite(options?.maxQuality) ? options.maxQuality : 110;
+  if (t === "Long") return { min: minLong, max: maxLong };
+  if (t === "Easy") return { min: minEasy, max: maxEasy };
+  if (t === "Quality") return { min: minQuality, max: maxQuality };
+  if (t === "Race") return { min: 30, max: 240 };
+  return { min: 0, max: 0 };
+}
+
+function applyLoadConstraintsToPlans(weekIndex, plans, ctx) {
+  const idx = clamp(Number(weekIndex) || 0, 0, 51);
+  const block = String(ctx?.block || "").trim();
+  const isRaceWeek = Boolean(ctx?.isRaceWeek);
+  const raceDay = Number.isFinite(Number(ctx?.raceDay)) ? clamp(Number(ctx.raceDay), 0, 6) : null;
+  const options = ctx?.minuteOptions || {};
+
+  const base = (Array.isArray(plans) ? plans : []).slice(0, 7).map((p) => ({ ...p, rpeOverride: defaultRpeForPlan(p, block) }));
+  while (base.length < 7) base.push({ type: "Rest", minutes: 0, phase: "", race: null, rpeOverride: 1 });
+
+  const chronic = chronicAvgDailyLoadForWeekIndex(idx);
+  const chronicFallback = (() => {
+    if (idx <= 0) return null;
+    const m = computeWeekMetrics(idx - 1);
+    return Number.isFinite(m?.meanLoad) && m.meanLoad > 0 ? m.meanLoad : null;
+  })();
+  const chronicDaily = chronic || chronicFallback || null;
+
+  const limitMonotony = isRaceWeek ? 1 : 2;
+
+  const clampMinutesByCaps = () => {
+    for (let i = 0; i < 7; i++) {
+      const p = base[i];
+      const cap = minuteCapsForPlan(p, options);
+      p.minutes = clamp(Math.round(Number(p.minutes) || 0), cap.min, cap.max);
+      const b = rpeBoundsForPlan(p, block);
+      p.rpeOverride = clamp(Number(p.rpeOverride) || b.min, b.min, b.max);
+    }
+  };
+
+  const compute = () => loadMetricsFromPlans(base, chronicDaily);
+
+  const pickRestCandidate = () => {
+    let best = -1;
+    let bestScore = Infinity;
+    for (let i = 0; i < 7; i++) {
+      const p = base[i];
+      if (i === raceDay) continue;
+      if (String(p.type || "") !== "Easy") continue;
+      const minutes = Math.max(0, Math.round(Number(p.minutes) || 0));
+      if (!minutes) continue;
+      const rpe = clamp(Number(p.rpeOverride) || 1, 1, 10);
+      const score = minutes * rpe;
+      if (score < bestScore) {
+        bestScore = score;
+        best = i;
+      }
+    }
+    return best;
+  };
+
+  const redistributeMinutes = (fromIndex, minutes) => {
+    let remaining = Math.max(0, Math.round(Number(minutes) || 0));
+    if (!remaining) return;
+    const candidates = [];
+    for (let i = 0; i < 7; i++) {
+      if (i === fromIndex) continue;
+      const p = base[i];
+      if (String(p.type || "") === "Rest") continue;
+      candidates.push(i);
+    }
+    candidates.sort((a, b) => {
+      const pa = base[a];
+      const pb = base[b];
+      const ta = String(pa.type || "");
+      const tb = String(pb.type || "");
+      const wA = ta === "Long" ? 0 : ta === "Quality" ? 1 : ta === "Easy" ? 2 : 3;
+      const wB = tb === "Long" ? 0 : tb === "Quality" ? 1 : tb === "Easy" ? 2 : 3;
+      return wA - wB;
+    });
+    for (const i of candidates) {
+      if (remaining <= 0) break;
+      const p = base[i];
+      const cap = minuteCapsForPlan(p, options);
+      const cur = Math.max(0, Math.round(Number(p.minutes) || 0));
+      const room = Math.max(0, cap.max - cur);
+      const take = Math.min(room, remaining);
+      if (take > 0) {
+        p.minutes = cur + take;
+        remaining -= take;
+      }
+    }
+  };
+
+  const forceLowRpeWherePossible = () => {
+    for (let i = 0; i < 7; i++) {
+      const p = base[i];
+      const b = rpeBoundsForPlan(p, block);
+      p.rpeOverride = clamp(Number(p.rpeOverride) || b.min, b.min, b.max);
+      p.rpeOverride = b.min;
+    }
+  };
+
+  const scaleDownMinutes = (factor) => {
+    const f = clamp(Number(factor) || 1, 0.1, 1);
+    for (let i = 0; i < 7; i++) {
+      const p = base[i];
+      if (String(p.type || "") === "Rest") continue;
+      if (isRaceWeek && i === raceDay) continue;
+      const cur = Math.max(0, Math.round(Number(p.minutes) || 0));
+      p.minutes = Math.max(0, Math.round(cur * f));
+    }
+    clampMinutesByCaps();
+  };
+
+  const updateVolumeOverride = () => {
+    const totalMinutes = base.reduce((sum, p) => sum + Math.max(0, Math.round(Number(p.minutes) || 0)), 0);
+    const hrs = totalMinutes > 0 ? formatVolumeHrs(totalMinutes / 60) : "";
+    return hrs;
+  };
+
+  if (isRaceWeek && Number.isFinite(raceDay)) {
+    const easyCapOptions = { ...options, maxEasy: 90, minEasy: 0 };
+
+    for (let i = 0; i < 7; i++) {
+      if (i === raceDay) continue;
+      base[i] = { type: "Rest", minutes: 0, phase: "", race: null, rpeOverride: 1 };
+    }
+    base[raceDay].type = "Race";
+    base[raceDay].rpeOverride = 9;
+    clampMinutesByCaps();
+
+    const matchRaceWeekTotalLoad = (maxIter) => {
+      if (!chronicDaily) return;
+      const desiredTotalLoad = chronicDaily * 7;
+      for (let guard = 0; guard < maxIter; guard++) {
+        const m = compute();
+        const totalLoad = m.dailyLoads.reduce((a, b) => a + b, 0);
+        if (Math.abs(totalLoad - desiredTotalLoad) < Math.max(6, desiredTotalLoad * 0.01)) break;
+
+        if (totalLoad > desiredTotalLoad) {
+          const p = base[raceDay];
+          const cap = minuteCapsForPlan(p, options);
+          const rpe = clamp(Number(p.rpeOverride) || 9, 9, 10);
+          const targetMinutes = Math.floor(desiredTotalLoad / rpe);
+          p.minutes = clamp(targetMinutes, cap.min, Math.max(cap.min, Math.round(Number(p.minutes) || 0)));
+          clampMinutesByCaps();
+          continue;
+        }
+
+        const deficit = Math.max(0, desiredTotalLoad - totalLoad);
+        const easyDays = [2, 4, 1, 3, 0, 6, 5].filter((d) => d !== raceDay);
+        let remaining = deficit;
+        for (const d of easyDays) {
+          if (remaining <= 0) break;
+          const p = base[d];
+          p.type = "Easy";
+          p.phase = "";
+          p.race = null;
+          const b = rpeBoundsForPlan(p, block === "Deload" ? "Deload" : "Transition");
+          p.rpeOverride = b.min;
+          const cap = minuteCapsForPlan(p, easyCapOptions);
+          const want = Math.min(cap.max, Math.max(0, Math.round(remaining / p.rpeOverride)));
+          p.minutes = clamp((Number(p.minutes) || 0) + want, cap.min, cap.max);
+          remaining = Math.max(0, desiredTotalLoad - compute().dailyLoads.reduce((a, b2) => a + b2, 0));
+        }
+        clampMinutesByCaps();
+      }
+    };
+
+    matchRaceWeekTotalLoad(12);
+
+    for (let iter = 0; iter < 6; iter++) {
+      const m = compute();
+      if (m.monotony !== null && m.monotony < limitMonotony) break;
+      const extra = pickRestCandidate();
+      if (extra < 0) break;
+
+      const moved = Math.max(0, Math.round(Number(base[extra].minutes) || 0));
+      base[extra] = { type: "Rest", minutes: 0, phase: "", race: null, rpeOverride: 1 };
+
+      let receiver = -1;
+      let best = -1;
+      for (let i = 0; i < 7; i++) {
+        if (i === extra || i === raceDay) continue;
+        if (String(base[i]?.type || "") !== "Easy") continue;
+        const mins = Math.max(0, Math.round(Number(base[i]?.minutes) || 0));
+        if (mins > best) {
+          best = mins;
+          receiver = i;
+        }
+      }
+
+      if (receiver >= 0 && moved > 0) {
+        const p = base[receiver];
+        const cap = minuteCapsForPlan(p, easyCapOptions);
+        const cur = Math.max(0, Math.round(Number(p.minutes) || 0));
+        const room = Math.max(0, cap.max - cur);
+        const take = Math.min(room, moved);
+        if (take > 0) p.minutes = cur + take;
+        const remaining = moved - take;
+        if (remaining > 0) redistributeMinutes(extra, remaining);
+      } else {
+        redistributeMinutes(extra, moved);
+      }
+
+      clampMinutesByCaps();
+      matchRaceWeekTotalLoad(8);
+    }
+
+    return { plans: base, volumeHrsOverride: updateVolumeOverride() };
+  }
+
+  if (block === "Deload") {
+    for (let i = 0; i < 7; i++) {
+      const p = base[i];
+      if (String(p.type || "") === "Quality" || String(p.type || "") === "Long") {
+        base[i] = { type: "Rest", minutes: 0, phase: "", race: null, rpeOverride: 1 };
+      }
+    }
+    for (let i = 0; i < 7; i++) {
+      const p = base[i];
+      if (String(p.type || "") === "Easy") p.rpeOverride = 2;
+    }
+    clampMinutesByCaps();
+  }
+
+  let changed = false;
+  for (let iter = 0; iter < 10; iter++) {
+    const m = compute();
+    const needMonotonyFix = m.monotony === null || m.monotony >= limitMonotony;
+    if (!needMonotonyFix) break;
+
+    const restIdx = pickRestCandidate();
+    if (restIdx < 0) break;
+    const moved = Math.max(0, Math.round(Number(base[restIdx].minutes) || 0));
+    base[restIdx] = { type: "Rest", minutes: 0, phase: "", race: null, rpeOverride: 1 };
+    redistributeMinutes(restIdx, moved);
+    clampMinutesByCaps();
+    changed = true;
+  }
+
+  if (chronicDaily) {
+    for (let iter = 0; iter < 8; iter++) {
+      const m = compute();
+      if (m.acwr === null) break;
+      if (block === "Deload") {
+        if (m.acwr < 0.8) break;
+      } else {
+        if (m.acwr < 1.5) break;
+      }
+
+      forceLowRpeWherePossible();
+      clampMinutesByCaps();
+      const m2 = compute();
+      if (m2.acwr === null) break;
+      const cap = block === "Deload" ? 0.78 : 1.45;
+      if (m2.acwr < (block === "Deload" ? 0.8 : 1.5)) break;
+      const totalLoad = m2.dailyLoads.reduce((a, b) => a + b, 0);
+      const desiredTotalLoad = chronicDaily * 7 * cap;
+      const factor = totalLoad > 0 ? desiredTotalLoad / totalLoad : 1;
+      if (factor >= 1) break;
+      scaleDownMinutes(factor);
+      changed = true;
+    }
+  }
+
+  const final = compute();
+  const needVolumeOverride =
+    (block === "Deload" && chronicDaily && final.acwr !== null && final.acwr >= 0.8) ||
+    (chronicDaily && final.acwr !== null && final.acwr >= 1.5);
+  const volumeHrsOverride = changed || needVolumeOverride ? updateVolumeOverride() : null;
+  return { plans: base, volumeHrsOverride };
+}
+
 function raceEntriesForWeek(week) {
   if (!week) return [];
   const monday = week.monday instanceof Date ? week.monday : null;
@@ -697,6 +1056,7 @@ function sessionPlanForDay(weekIndex, day, ctx) {
   const phase = String(day?.phase || "").trim();
   const race = day?.race || null;
   const block = String(ctx?.block || "").trim();
+  const rpeOverride = Number.isFinite(Number(day?.rpeOverride)) ? clamp(Number(day.rpeOverride), 1, 10) : null;
 
   if (type === "Rest" || minutes <= 0) {
     return { zone: 1, rpe: 1, noteBody: buildAutoNoteBodyForPlan({ title: "休息／伸展", minutes: 0, rpeText: "—" }) };
@@ -708,13 +1068,13 @@ function sessionPlanForDay(weekIndex, day, ctx) {
     const meta = [distText, kindText].filter(Boolean).join(" · ");
     const title = meta ? `比賽：${race.name}（${meta}）` : `比賽：${race.name}`;
     const details = ["熱身 15' + 比賽 + 放鬆 10'"];
-    return { zone: 6, rpe: 10, noteBody: buildAutoNoteBodyForPlan({ title, details, minutes, rpeText: "9–10" }) };
+    return { zone: 6, rpe: rpeOverride ?? 10, noteBody: buildAutoNoteBodyForPlan({ title, details, minutes, rpeText: "9–10" }) };
   }
 
   if (type === "Long") {
     return {
       zone: 2,
-      rpe: 3,
+      rpe: rpeOverride ?? 3,
       noteBody: buildAutoNoteBodyForPlan({
         title: "長課（有氧耐力）",
         details: ["保持輕鬆，避免配速拉高"],
@@ -726,14 +1086,14 @@ function sessionPlanForDay(weekIndex, day, ctx) {
 
   if (type === "Easy") {
     const easyRpeText = block === "Deload" || block === "Transition" ? "2–4" : "3–4";
-    return { zone: 2, rpe: 3, noteBody: buildAutoNoteBodyForPlan({ title: "有氧耐力", minutes, rpeText: easyRpeText }) };
+    return { zone: 2, rpe: rpeOverride ?? (block === "Deload" || block === "Transition" ? 2 : 3), noteBody: buildAutoNoteBodyForPlan({ title: "有氧耐力", minutes, rpeText: easyRpeText }) };
   }
 
   const idx = phaseStreakIndex(weekIndex, phase);
   if (phase === "Tempo") {
     const main = clamp(30 + idx * 5, 30, 45);
     const details = [`主課：節奏跑 ${main}'（可每週 +5'，最多 45'）`, "其餘時間作熱身／放鬆"];
-    return { zone: 3, rpe: 6, noteBody: buildAutoNoteBodyForPlan({ title: "節奏", details, minutes, rpeText: "5–6" }) };
+    return { zone: 3, rpe: rpeOverride ?? 6, noteBody: buildAutoNoteBodyForPlan({ title: "節奏", details, minutes, rpeText: "5–6" }) };
   }
   if (phase === "Threshold") {
     const repMin = clamp(6 + Math.floor(idx / 2) * 2, 6, 12);
@@ -743,14 +1103,14 @@ function sessionPlanForDay(weekIndex, day, ctx) {
     const details = [`主課：${sets} × ${repMin}'（跑/休 4:1，休 ${restMin}'）`];
     if (extra) details.push(`進階：完成 2 組後，加 ${extra}' 乳酸跑`);
     details.push("其餘時間作熱身／放鬆");
-    return { zone: 4, rpe: 8, noteBody: buildAutoNoteBodyForPlan({ title: "乳酸閾值", details, minutes, rpeText: "7–8" }) };
+    return { zone: 4, rpe: rpeOverride ?? 8, noteBody: buildAutoNoteBodyForPlan({ title: "乳酸閾值", details, minutes, rpeText: "7–8" }) };
   }
   if (phase === "VO2Max") {
     const workTotal = clamp(5 + idx * 2, 5, 15);
     const repMin = workTotal <= 8 ? 2 : workTotal <= 12 ? 3 : 4;
     const reps = Math.max(1, Math.round(workTotal / repMin));
     const details = [`主課：${reps} × ${repMin}'（跑/休 1:1）`, `總強度：約 ${clamp(reps * repMin, 5, 15)}'（逐週由 5' 加到 15'）`, "其餘時間作熱身／放鬆"];
-    return { zone: 5, rpe: 9, noteBody: buildAutoNoteBodyForPlan({ title: "最大攝氧量", details, minutes, rpeText: "8–9" }) };
+    return { zone: 5, rpe: rpeOverride ?? 9, noteBody: buildAutoNoteBodyForPlan({ title: "最大攝氧量", details, minutes, rpeText: "8–9" }) };
   }
   if (phase === "Anaerobic") {
     const workTotal = clamp(5 + idx * 2, 5, 15);
@@ -758,10 +1118,10 @@ function sessionPlanForDay(weekIndex, day, ctx) {
     const repMin = repSec === 30 ? 0.5 : 1;
     const reps = Math.max(1, Math.round(workTotal / repMin));
     const details = [`主課：${reps} × ${repSec}s（跑/休 1:1）`, `總強度：約 ${clamp(Math.round(reps * repMin), 5, 15)}'（逐週由 5' 加到 15'）`, "其餘時間作熱身／放鬆"];
-    return { zone: 6, rpe: 10, noteBody: buildAutoNoteBodyForPlan({ title: "無氧", details, minutes, rpeText: "9–10" }) };
+    return { zone: 6, rpe: rpeOverride ?? 10, noteBody: buildAutoNoteBodyForPlan({ title: "無氧", details, minutes, rpeText: "9–10" }) };
   }
 
-  return { zone: 2, rpe: 3, noteBody: buildAutoNoteBodyForPlan({ title: "有氧耐力", minutes, rpeText: "3–4" }) };
+  return { zone: 2, rpe: rpeOverride ?? 3, noteBody: buildAutoNoteBodyForPlan({ title: "有氧耐力", minutes, rpeText: "3–4" }) };
 }
 
 function clampDayPlanMinutes(plans, targetMinutes, options) {
@@ -883,9 +1243,10 @@ function computeWeekDayPlans(weekIndex) {
       const longBase = Math.round(targetMinutes * 0.33);
       day[longDay] = { type: "Long", minutes: clamp(longBase, 60, 180), phase: "", race: null };
     }
-    [0, 2, 4, 6].forEach((d) => {
-      if (day[d].type === "Rest") day[d] = { type: "Easy", minutes: 45, phase: "", race: null };
+    [0, 2, 6].forEach((d) => {
+      if (day[d].type === "Rest") day[d] = { type: "Easy", minutes: d === 6 ? 35 : d === 2 ? 50 : 40, phase: "", race: null };
     });
+    if (day[4].type === "Rest") day[4] = { type: "Rest", minutes: 0, phase: "", race: null };
   } else {
     const q = intensityPhases[0] || phases.find((p) => p !== "Aerobic Endurance" && p !== "Deload" && p !== "Peaking") || "Tempo";
     day[1] = { type: "Quality", minutes: q === "Threshold" ? 70 : q === "Tempo" ? 60 : q === "VO2Max" ? 55 : 50, phase: q, race: null };
@@ -894,7 +1255,7 @@ function computeWeekDayPlans(weekIndex) {
       day[longDay] = { type: "Long", minutes: clamp(longBase, 60, 180), phase: "", race: null };
     }
     [0, 2, 3, 4, 6].forEach((d) => {
-      if (day[d].type === "Rest") day[d] = { type: "Easy", minutes: 45, phase: "", race: null };
+      if (day[d].type === "Rest") day[d] = { type: "Easy", minutes: d === 0 ? 40 : d === 2 ? 50 : d === 3 ? 35 : d === 6 ? 45 : 30, phase: "", race: null };
     });
     day[4] = { type: "Rest", minutes: 0, phase: "", race: null };
   }
@@ -907,7 +1268,9 @@ function computeWeekDayPlans(weekIndex) {
         ? { minEasy: 0, maxEasy: 90, minLong: 0, maxLong: 0, minQuality: 0, maxQuality: 0 }
         : { minEasy: 30, maxEasy: 120, minLong: 30, maxLong: 180, minQuality: 30, maxQuality: 110 };
 
-  return { block, targetMinutes, plans: clampDayPlanMinutes(plans, targetMinutes, options) };
+  const clamped = clampDayPlanMinutes(plans, targetMinutes, options);
+  const constrained = applyLoadConstraintsToPlans(idx, clamped, { block, isRaceWeek, raceDay, minuteOptions: options });
+  return { block, targetMinutes, plans: constrained.plans, volumeHrsOverride: constrained.volumeHrsOverride };
 }
 
 function applyCoachDayPlanRules(range) {
@@ -921,6 +1284,13 @@ function applyCoachDayPlanRules(range) {
     if (!week) continue;
     const result = computeWeekDayPlans(i);
     if (!result) continue;
+
+    if (typeof result.volumeHrsOverride === "string" && result.volumeHrsOverride !== week.volumeHrs) {
+      week.volumeMode = "direct";
+      week.volumeFactor = 1;
+      week.volumeHrs = result.volumeHrsOverride;
+      changed = true;
+    }
 
     const sessions = getWeekSessions(week);
     if (!Array.isArray(week.sessions) || !week.sessions.length) week.sessions = sessions;
