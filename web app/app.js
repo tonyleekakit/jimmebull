@@ -491,6 +491,7 @@ function buildDefaultSessions() {
       zone: 1,
       rpe: 1,
       kind: "Run",
+      note: "",
     });
   }
   return sessions;
@@ -506,6 +507,7 @@ function getWeekSessions(week) {
     if (!week.sessions[i]) week.sessions[i] = defaults[i];
     const s = week.sessions[i];
     s.dayLabel = normalizeDayLabelZh(s.dayLabel, i);
+    if (typeof s.note !== "string") s.note = "";
     ensureSessionWorkouts(s);
   }
   if (week.sessions.length > 7) week.sessions.length = 7;
@@ -1155,6 +1157,7 @@ function persistState() {
               zone: Number(s?.zone) || 0,
               rpe: Number(s?.rpe) || 0,
               kind: s?.kind || "",
+              note: typeof s?.note === "string" ? s.note : "",
             }))
           : [],
       })),
@@ -1213,6 +1216,7 @@ function snapshotForHistory() {
             zone: Number(s?.zone) || 0,
             rpe: Number(s?.rpe) || 0,
             kind: s?.kind || "",
+            note: typeof s?.note === "string" ? s.note : "",
           }))
         : [],
     })),
@@ -1256,6 +1260,7 @@ function applyHistorySnapshot(snapshot) {
             zone: Number(s?.zone) || 0,
             rpe: Number(s?.rpe) || 0,
             kind: typeof s?.kind === "string" ? s.kind : "",
+            note: typeof s?.note === "string" ? s.note : "",
           };
           ensureSessionWorkouts(next);
           return next;
@@ -1909,6 +1914,30 @@ function renderWeekDetails() {
       racesEl.appendChild(el("span", "dayRaces__names", dayRaces.join(", ")));
       card.appendChild(racesEl);
     }
+
+    const noteWrap = el("div", "dayNote");
+    noteWrap.appendChild(el("div", "dayNote__label", "備註"));
+    const noteInput = document.createElement("textarea");
+    noteInput.className = "dayNote__input";
+    noteInput.rows = 2;
+    noteInput.value = typeof s.note === "string" ? s.note : "";
+    let noteHistoryPushed = false;
+    noteInput.addEventListener("focus", () => {
+      noteHistoryPushed = false;
+    });
+    noteInput.addEventListener("input", () => {
+      const next = noteInput.value.slice(0, 1200);
+      if (noteInput.value !== next) noteInput.value = next;
+      if (s.note === next) return;
+      if (!noteHistoryPushed) {
+        pushHistory();
+        noteHistoryPushed = true;
+      }
+      s.note = next;
+      persistState();
+    });
+    noteWrap.appendChild(noteInput);
+    card.appendChild(noteWrap);
 
   weekDays.appendChild(card);
   });
@@ -2745,6 +2774,7 @@ function init() {
               zone: Number(s?.zone) || 0,
               rpe: clamp(Number(s?.rpe) || 1, 1, 10),
               kind: typeof s?.kind === "string" ? s.kind : "Run",
+              note: typeof s?.note === "string" ? s.note : "",
             };
             ensureSessionWorkouts(next);
             return next;

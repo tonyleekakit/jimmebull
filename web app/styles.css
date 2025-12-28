@@ -788,6 +788,34 @@ body {
   color: var(--accent);
 }
 
+.dayNote {
+  display: grid;
+  gap: 6px;
+}
+
+.dayNote__label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dayNote__input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface);
+  resize: vertical;
+}
+
+.dayNote__input:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
 .dayField {
   display: inline-flex;
   align-items: center;
