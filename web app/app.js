@@ -567,11 +567,407 @@ function applyCoachPhaseRules() {
   return changed;
 }
 
+const AUTO_NOTE_START = "【自動課表】";
+const AUTO_NOTE_END = "【/自動課表】";
+
+function splitAutoNote(raw) {
+  const note = typeof raw === "string" ? raw : "";
+  const start = note.indexOf(AUTO_NOTE_START);
+  const end = note.indexOf(AUTO_NOTE_END);
+  if (start < 0 || end < 0 || end < start) return { has: false, prefix: note, auto: "", suffix: "" };
+  const prefix = note.slice(0, start);
+  const auto = note.slice(start + AUTO_NOTE_START.length, end);
+  const suffix = note.slice(end + AUTO_NOTE_END.length);
+  return { has: true, prefix, auto, suffix };
+}
+
+function mergeAutoNote(raw, autoBody) {
+  const parts = splitAutoNote(raw);
+  const body = typeof autoBody === "string" ? autoBody.trim() : "";
+  const wrapped = body ? `${AUTO_NOTE_START}\n${body}\n${AUTO_NOTE_END}` : `${AUTO_NOTE_START}\n${AUTO_NOTE_END}`;
+  if (!parts.has) {
+    const base = typeof raw === "string" ? raw.trimEnd() : "";
+    return base ? `${base}\n\n${wrapped}` : wrapped;
+  }
+  const prefix = parts.prefix || "";
+  const suffix = parts.suffix || "";
+  const out = `${prefix.trimEnd()}${prefix.trimEnd() ? "\n\n" : ""}${wrapped}${suffix.trimStart() ? `\n\n${suffix.trimStart()}` : ""}`;
+  return out.trim();
+}
+
+function isAutoOnlyNote(raw) {
+  const p = splitAutoNote(raw);
+  if (!p.has) return false;
+  return `${p.prefix || ""}${p.suffix || ""}`.trim().length === 0;
+}
+
+function plannedMinutesForWeek(week) {
+  const v = Number(week?.volumeHrs);
+  if (!Number.isFinite(v) || v <= 0) return 0;
+  return Math.max(0, Math.round(v * 60));
+}
+
+function raceEntriesForWeek(week) {
+  if (!week) return [];
+  const monday = week.monday instanceof Date ? week.monday : null;
+  if (!monday) return [];
+  const races = Array.isArray(week.races) ? week.races : [];
+  const out = [];
+  for (const r of races) {
+    const name = String(r?.name || "").trim();
+    const date = String(r?.date || "").trim();
+    if (!name || !date) continue;
+    const d = parseYMD(date);
+    if (!d) continue;
+    const dayIndex = Math.round((d.getTime() - monday.getTime()) / MS_PER_DAY);
+    if (!Number.isFinite(dayIndex) || dayIndex < 0 || dayIndex > 6) continue;
+    const dist = Number(r?.distanceKm);
+    const distanceKm = Number.isFinite(dist) && dist > 0 ? dist : null;
+    const kind = typeof r?.kind === "string" ? r.kind : "";
+    out.push({ name, date, dayIndex, distanceKm, kind });
+  }
+  out.sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
+  return out;
+}
+
+function nextTargetRaceFromWeekIndex(fromWeekIndex) {
+  const start = clamp(Number(fromWeekIndex) || 0, 0, 51);
+  for (let j = start; j < 52; j++) {
+    const w = state.weeks[j];
+    if (!w) continue;
+    const pr = String(w.priority || "").trim().toUpperCase();
+    if (pr !== "A" && pr !== "B") continue;
+    const races = Array.isArray(w.races) ? w.races : [];
+    const candidates = races
+      .map((r) => {
+        const date = String(r?.date || "").trim();
+        const dist = Number(r?.distanceKm);
+        const distanceKm = Number.isFinite(dist) && dist > 0 ? dist : null;
+        const kind = typeof r?.kind === "string" ? r.kind : "";
+        return { date, distanceKm, kind };
+      })
+      .filter((r) => r.date && r.distanceKm);
+    if (!candidates.length) continue;
+    candidates.sort((a, b) => a.date.localeCompare(b.date));
+    return { weekIndex: j, race: candidates[0] };
+  }
+  return null;
+}
+
+function phaseStreakIndex(weekIndex, phase) {
+  const p = String(phase || "").trim();
+  if (!PHASE_OPTIONS.includes(p)) return 0;
+  let streak = 0;
+  for (let i = clamp(weekIndex, 0, 51); i >= 0; i--) {
+    const w = state.weeks[i];
+    if (!w) break;
+    const phases = normalizePhases(w.phases);
+    if (!phases.includes(p)) break;
+    streak++;
+  }
+  return Math.max(0, streak - 1);
+}
+
+function estimateRaceMinutes(distanceKm, kind) {
+  const d = Number(distanceKm);
+  const k = String(kind || "").trim();
+  if (!Number.isFinite(d) || d <= 0) return 90;
+  const minPerKm = k === "trail" ? 9 : 6.5;
+  const raw = d * minPerKm + 25;
+  return clamp(Math.round(raw), 30, 240);
+}
+
+function buildAutoNoteBodyForPlan(plan) {
+  const lines = [];
+  if (plan?.title) lines.push(String(plan.title));
+  if (plan?.details && Array.isArray(plan.details)) {
+    plan.details.forEach((t) => {
+      const s = String(t || "").trim();
+      if (s) lines.push(s);
+    });
+  }
+  if (plan?.minutes) lines.push(`總時長：${Math.round(Number(plan.minutes) || 0)} 分鐘`);
+  if (plan?.rpeText) lines.push(`RPE：${plan.rpeText}`);
+  return lines.join("\n").trim();
+}
+
+function sessionPlanForDay(weekIndex, day, ctx) {
+  const minutes = Math.max(0, Math.round(Number(day?.minutes) || 0));
+  const type = String(day?.type || "").trim();
+  const phase = String(day?.phase || "").trim();
+  const race = day?.race || null;
+  const block = String(ctx?.block || "").trim();
+
+  if (type === "Rest" || minutes <= 0) {
+    return { zone: 1, rpe: 1, noteBody: buildAutoNoteBodyForPlan({ title: "休息／伸展", minutes: 0, rpeText: "—" }) };
+  }
+
+  if (type === "Race" && race) {
+    const kindText = race.kind === "trail" ? "越野跑" : race.kind === "road" ? "路跑" : "";
+    const distText = race.distanceKm ? `${race.distanceKm}km` : "";
+    const meta = [distText, kindText].filter(Boolean).join(" · ");
+    const title = meta ? `比賽：${race.name}（${meta}）` : `比賽：${race.name}`;
+    const details = ["熱身 15' + 比賽 + 放鬆 10'"];
+    return { zone: 6, rpe: 10, noteBody: buildAutoNoteBodyForPlan({ title, details, minutes, rpeText: "9–10" }) };
+  }
+
+  if (type === "Long") {
+    return {
+      zone: 2,
+      rpe: 3,
+      noteBody: buildAutoNoteBodyForPlan({
+        title: "長課（有氧耐力）",
+        details: ["保持輕鬆，避免配速拉高"],
+        minutes,
+        rpeText: "3–4",
+      }),
+    };
+  }
+
+  if (type === "Easy") {
+    const easyRpeText = block === "Deload" || block === "Transition" ? "2–4" : "3–4";
+    return { zone: 2, rpe: 3, noteBody: buildAutoNoteBodyForPlan({ title: "有氧耐力", minutes, rpeText: easyRpeText }) };
+  }
+
+  const idx = phaseStreakIndex(weekIndex, phase);
+  if (phase === "Tempo") {
+    const main = clamp(30 + idx * 5, 30, 45);
+    const details = [`主課：節奏跑 ${main}'（可每週 +5'，最多 45'）`, "其餘時間作熱身／放鬆"];
+    return { zone: 3, rpe: 6, noteBody: buildAutoNoteBodyForPlan({ title: "節奏", details, minutes, rpeText: "5–6" }) };
+  }
+  if (phase === "Threshold") {
+    const repMin = clamp(6 + Math.floor(idx / 2) * 2, 6, 12);
+    const restMin = Math.max(1, Math.round(repMin / 4));
+    const sets = clamp(3 + Math.floor(idx / 2), 3, 5);
+    const extra = idx >= 3 ? clamp(10 + (idx - 3) * 5, 10, 20) : 0;
+    const details = [`主課：${sets} × ${repMin}'（跑/休 4:1，休 ${restMin}'）`];
+    if (extra) details.push(`進階：完成 2 組後，加 ${extra}' 乳酸跑`);
+    details.push("其餘時間作熱身／放鬆");
+    return { zone: 4, rpe: 8, noteBody: buildAutoNoteBodyForPlan({ title: "乳酸閾值", details, minutes, rpeText: "7–8" }) };
+  }
+  if (phase === "VO2Max") {
+    const workTotal = clamp(5 + idx * 2, 5, 15);
+    const repMin = workTotal <= 8 ? 2 : workTotal <= 12 ? 3 : 4;
+    const reps = Math.max(1, Math.round(workTotal / repMin));
+    const details = [`主課：${reps} × ${repMin}'（跑/休 1:1）`, `總強度：約 ${clamp(reps * repMin, 5, 15)}'（逐週由 5' 加到 15'）`, "其餘時間作熱身／放鬆"];
+    return { zone: 5, rpe: 9, noteBody: buildAutoNoteBodyForPlan({ title: "最大攝氧量", details, minutes, rpeText: "8–9" }) };
+  }
+  if (phase === "Anaerobic") {
+    const workTotal = clamp(5 + idx * 2, 5, 15);
+    const repSec = workTotal <= 8 ? 30 : 60;
+    const repMin = repSec === 30 ? 0.5 : 1;
+    const reps = Math.max(1, Math.round(workTotal / repMin));
+    const details = [`主課：${reps} × ${repSec}s（跑/休 1:1）`, `總強度：約 ${clamp(Math.round(reps * repMin), 5, 15)}'（逐週由 5' 加到 15'）`, "其餘時間作熱身／放鬆"];
+    return { zone: 6, rpe: 10, noteBody: buildAutoNoteBodyForPlan({ title: "無氧", details, minutes, rpeText: "9–10" }) };
+  }
+
+  return { zone: 2, rpe: 3, noteBody: buildAutoNoteBodyForPlan({ title: "有氧耐力", minutes, rpeText: "3–4" }) };
+}
+
+function clampDayPlanMinutes(plans, targetMinutes, options) {
+  const target = Math.max(0, Math.round(Number(targetMinutes) || 0));
+  const maxLong = Number.isFinite(options?.maxLong) ? options.maxLong : 180;
+  const minLong = Number.isFinite(options?.minLong) ? options.minLong : 30;
+  const maxEasy = Number.isFinite(options?.maxEasy) ? options.maxEasy : 120;
+  const minEasy = Number.isFinite(options?.minEasy) ? options.minEasy : 0;
+  const maxQuality = Number.isFinite(options?.maxQuality) ? options.maxQuality : 100;
+  const minQuality = Number.isFinite(options?.minQuality) ? options.minQuality : 30;
+
+  const kinds = plans.map((p) => String(p.type || ""));
+  const mins = plans.map((p) => Math.max(0, Math.round(Number(p.minutes) || 0)));
+  const caps = mins.map((v, i) => {
+    const t = kinds[i];
+    if (t === "Long") return { min: minLong, max: maxLong };
+    if (t === "Easy") return { min: minEasy, max: maxEasy };
+    if (t === "Quality") return { min: minQuality, max: maxQuality };
+    if (t === "Race") return { min: 30, max: 240 };
+    return { min: 0, max: 0 };
+  });
+
+  for (let i = 0; i < mins.length; i++) {
+    mins[i] = clamp(mins[i], caps[i].min, caps[i].max);
+  }
+
+  const sum = () => mins.reduce((a, b) => a + b, 0);
+  const orderReduce = ["Easy", "Long", "Quality", "Race"];
+  const orderAdd = ["Long", "Easy", "Quality", "Race"];
+
+  let cur = sum();
+  if (cur > target) {
+    let diff = cur - target;
+    for (const k of orderReduce) {
+      if (diff <= 0) break;
+      for (let i = 0; i < mins.length; i++) {
+        if (diff <= 0) break;
+        if (kinds[i] !== k) continue;
+        const lo = caps[i].min;
+        const room = Math.max(0, mins[i] - lo);
+        const take = Math.min(room, diff);
+        mins[i] -= take;
+        diff -= take;
+      }
+    }
+  } else if (cur < target) {
+    let diff = target - cur;
+    for (const k of orderAdd) {
+      if (diff <= 0) break;
+      for (let i = 0; i < mins.length; i++) {
+        if (diff <= 0) break;
+        if (kinds[i] !== k) continue;
+        const hi = caps[i].max;
+        const room = Math.max(0, hi - mins[i]);
+        const take = Math.min(room, diff);
+        mins[i] += take;
+        diff -= take;
+      }
+    }
+  }
+
+  return plans.map((p, i) => ({ ...p, minutes: mins[i] }));
+}
+
+function computeWeekDayPlans(weekIndex) {
+  const idx = clamp(Number(weekIndex) || 0, 0, 51);
+  const w = state.weeks[idx];
+  if (!w) return null;
+
+  const targetMinutes = plannedMinutesForWeek(w);
+  if (!targetMinutes) return null;
+
+  const block = normalizeBlockValue(w.block || "") || "Base";
+  const phases = normalizePhases(w.phases);
+  const races = raceEntriesForWeek(w);
+  const pr = String(w.priority || "").trim().toUpperCase();
+  const isRaceWeek = races.length > 0 && (pr === "A" || pr === "B");
+  const next = nextTargetRaceFromWeekIndex(idx);
+  const raceContext = isRaceWeek ? races[0] : next?.race || null;
+
+  const intensityOrder = intensityRelevanceForRace(raceContext?.distanceKm, raceContext?.kind);
+  const intensityPhases = phases.filter((p) => p === "Tempo" || p === "Threshold" || p === "VO2Max" || p === "Anaerobic");
+  intensityPhases.sort((a, b) => (intensityOrder.indexOf(a) < 0 ? 99 : intensityOrder.indexOf(a)) - (intensityOrder.indexOf(b) < 0 ? 99 : intensityOrder.indexOf(b)));
+
+  const day = new Array(7).fill(null).map(() => ({ type: "Rest", minutes: 0, phase: "", race: null }));
+
+  const raceDay = isRaceWeek ? clamp(Number(races[0]?.dayIndex) || 0, 0, 6) : null;
+  if (Number.isFinite(raceDay)) {
+    day[raceDay] = { type: "Race", minutes: estimateRaceMinutes(races[0]?.distanceKm, races[0]?.kind), phase: "", race: races[0] };
+  }
+
+  const hasLong = (block === "Base" || block === "Build" || (block === "Peak" && !isRaceWeek)) && !isRaceWeek;
+  const longDay = hasLong ? 5 : null;
+
+  const isPeak = block === "Peak";
+  const isRecoveryBlock = block === "Deload" || block === "Transition";
+
+  if (isRecoveryBlock) {
+    const baseEasy = Math.max(30, Math.round(targetMinutes * 0.18));
+    day[1] = { type: "Easy", minutes: baseEasy, phase: "", race: null };
+    day[3] = { type: "Easy", minutes: baseEasy, phase: "", race: null };
+    day[5] = { type: "Easy", minutes: Math.max(30, Math.round(targetMinutes * 0.26)), phase: "", race: null };
+  } else if (isPeak) {
+    const q1 = intensityPhases[0] || "VO2Max";
+    const q2 = intensityPhases[1] || (q1 === "VO2Max" ? "Threshold" : "VO2Max");
+    const qDays = [1, 3].filter((d) => !Number.isFinite(raceDay) || d !== raceDay);
+    if (qDays[0] !== undefined) day[qDays[0]] = { type: "Quality", minutes: q1 === "Threshold" ? 70 : q1 === "Tempo" ? 60 : 55, phase: q1, race: null };
+    if (!isRaceWeek && qDays[1] !== undefined) day[qDays[1]] = { type: "Quality", minutes: q2 === "Threshold" ? 70 : q2 === "Tempo" ? 60 : 55, phase: q2, race: null };
+    if (Number.isFinite(longDay)) {
+      const longBase = Math.round(targetMinutes * 0.28);
+      day[longDay] = { type: "Long", minutes: clamp(longBase, 45, 120), phase: "", race: null };
+    }
+  } else if (block === "Build") {
+    const q1 = intensityPhases[0] || "Tempo";
+    const q2 = intensityPhases[1] || "Threshold";
+    day[1] = { type: "Quality", minutes: q1 === "Threshold" ? 75 : q1 === "Tempo" ? 65 : q1 === "VO2Max" ? 55 : 50, phase: q1, race: null };
+    day[3] = { type: "Quality", minutes: q2 === "Threshold" ? 75 : q2 === "Tempo" ? 65 : q2 === "VO2Max" ? 55 : 50, phase: q2, race: null };
+    if (Number.isFinite(longDay)) {
+      const longBase = Math.round(targetMinutes * 0.33);
+      day[longDay] = { type: "Long", minutes: clamp(longBase, 60, 180), phase: "", race: null };
+    }
+    [0, 2, 4, 6].forEach((d) => {
+      if (day[d].type === "Rest") day[d] = { type: "Easy", minutes: 45, phase: "", race: null };
+    });
+  } else {
+    const q = intensityPhases[0] || phases.find((p) => p !== "Aerobic Endurance" && p !== "Deload" && p !== "Peaking") || "Tempo";
+    day[1] = { type: "Quality", minutes: q === "Threshold" ? 70 : q === "Tempo" ? 60 : q === "VO2Max" ? 55 : 50, phase: q, race: null };
+    if (Number.isFinite(longDay)) {
+      const longBase = Math.round(targetMinutes * 0.33);
+      day[longDay] = { type: "Long", minutes: clamp(longBase, 60, 180), phase: "", race: null };
+    }
+    [0, 2, 3, 4, 6].forEach((d) => {
+      if (day[d].type === "Rest") day[d] = { type: "Easy", minutes: 45, phase: "", race: null };
+    });
+    day[4] = { type: "Rest", minutes: 0, phase: "", race: null };
+  }
+
+  const plans = day.map((d) => ({ ...d }));
+  const options =
+    block === "Peak"
+      ? { minEasy: 0, maxEasy: 0, minLong: 30, maxLong: 120, minQuality: 30, maxQuality: 110 }
+      : block === "Deload" || block === "Transition"
+        ? { minEasy: 0, maxEasy: 90, minLong: 0, maxLong: 0, minQuality: 0, maxQuality: 0 }
+        : { minEasy: 30, maxEasy: 120, minLong: 30, maxLong: 180, minQuality: 30, maxQuality: 110 };
+
+  return { block, targetMinutes, plans: clampDayPlanMinutes(plans, targetMinutes, options) };
+}
+
+function applyCoachDayPlanRules(range) {
+  if (!state || !Array.isArray(state.weeks) || state.weeks.length !== 52) return false;
+  const start = range && Number.isFinite(Number(range.start)) ? clamp(Number(range.start), 0, 51) : 0;
+  const end = range && Number.isFinite(Number(range.end)) ? clamp(Number(range.end), 0, 51) : 51;
+  let changed = false;
+
+  for (let i = start; i <= end; i++) {
+    const week = state.weeks[i];
+    if (!week) continue;
+    const result = computeWeekDayPlans(i);
+    if (!result) continue;
+
+    const sessions = getWeekSessions(week);
+    if (!Array.isArray(week.sessions) || !week.sessions.length) week.sessions = sessions;
+
+    for (let d = 0; d < 7; d++) {
+      const s = sessions[d];
+      if (!s) continue;
+
+      const allowOverwrite = isAutoOnlyNote(s.note) || (getSessionTotals(s).minutes === 0 && String(s.note || "").trim() === "");
+      const plan = result.plans[d];
+      const isQuality = plan.type === "Quality";
+      const dayPlan = sessionPlanForDay(i, plan, { block: result.block });
+
+      if (allowOverwrite) {
+        s.workoutsCount = 1;
+        s.workouts = [{ duration: Math.max(0, Math.round(Number(plan.minutes) || 0)), rpe: dayPlan.rpe }];
+        s.zone = dayPlan.zone;
+        ensureSessionWorkouts(s);
+        const nextNote = mergeAutoNote(s.note, dayPlan.noteBody);
+        if (nextNote !== s.note) s.note = nextNote;
+        changed = true;
+      } else if (splitAutoNote(s.note).has) {
+        const body = dayPlan.noteBody;
+        const nextNote = mergeAutoNote(s.note, body);
+        if (nextNote !== s.note) {
+          s.note = nextNote;
+          changed = true;
+        }
+      } else if (!String(s.note || "").trim() && isQuality) {
+        const nextNote = mergeAutoNote("", dayPlan.noteBody);
+        if (nextNote !== s.note) {
+          s.note = nextNote;
+          changed = true;
+        }
+      }
+    }
+  }
+
+  return changed;
+}
+
 function applyCoachAutoRules() {
   const a = applyCoachBlockRules();
   const b = applyCoachPhaseRules();
   const c = applyAnnualVolumeRules();
-  return a || b || c;
+  const d = applyCoachDayPlanRules();
+  return a || b || c || d;
 }
 
 const PHASE_LABELS_ZH = {
@@ -1775,8 +2171,14 @@ function renderCalendar() {
           w.block = select.value;
           applyCoachPhaseRules();
           applyAnnualVolumeRules();
+          const sessionsChanged = applyCoachDayPlanRules({ start: i, end: i });
           persistState();
+          updateHeader();
           renderCalendar();
+          if (sessionsChanged) {
+            renderCharts();
+            renderWeekDetails();
+          }
         });
         wrap.appendChild(select);
         cell.appendChild(wrap);
@@ -1796,8 +2198,13 @@ function renderCalendar() {
         btn.addEventListener("click", () => {
           pushHistory();
           w.phases = selected ? phases.filter((p) => p !== row.phase) : [...phases, row.phase];
+          const sessionsChanged = applyCoachDayPlanRules({ start: i, end: i });
           persistState();
           renderCalendar();
+          if (sessionsChanged) {
+            renderCharts();
+            renderWeekDetails();
+          }
         });
         cell.appendChild(btn);
       } else if (row.type === "races") {
@@ -2399,6 +2806,7 @@ function openPlannedVolumeModal(weekIndex) {
         wk.volumeHrs = next;
       }
       recomputeFormulaVolumes();
+      applyCoachDayPlanRules({ start, end });
     } else if (mode === "formula") {
       const rawFactor = String(factor.value || "").trim();
       const f = Number(rawFactor);
@@ -2423,6 +2831,8 @@ function openPlannedVolumeModal(weekIndex) {
         w.volumeFactor = f;
       }
       recomputeFormulaVolumes();
+      if (applyToOthers) applyCoachDayPlanRules({ start: 0, end: 51 });
+      else applyCoachDayPlanRules({ start: idx, end: idx });
     }
 
     persistState();
@@ -3000,6 +3410,7 @@ function wireButtons() {
       }
       pushHistory();
       applyAnnualVolumeToWeeks(v);
+      applyCoachDayPlanRules({ start: 0, end: 51 });
       persistState();
       updateHeader();
       renderCalendar();
@@ -3065,9 +3476,11 @@ function wireButtons() {
     generateBtn.addEventListener("click", () => {
       pushHistory();
       generatePlan();
+      applyCoachDayPlanRules({ start: 0, end: 51 });
       updateHeader();
       renderCalendar();
       renderWeekDetails();
+      renderCharts();
       showToast("已生成訓練計畫（示範）");
     });
   }
