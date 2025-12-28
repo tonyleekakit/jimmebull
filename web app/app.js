@@ -1114,7 +1114,7 @@ function sessionPlanForDay(weekIndex, day, ctx) {
 
   if (phase === "Tempo") {
     const main = clamp(minutes, 25, 70);
-    const details = [`主課：節奏跑 ${main}'（可每週 +5'，逐步延長）`, "其餘時間作熱身／放鬆"];
+    const details = [`主課：節奏跑 ${main}'（可每週 +5'，逐步延長）`, "另加：熱身／放鬆"];
     return { zone: 3, rpe: rpeOverride ?? 6, workoutMinutes: minutes, noteBody: buildAutoNoteBodyForPlan({ title: "節奏", details, minutes, rpeText: "5–6" }) };
   }
   if (phase === "Threshold") {
@@ -1127,7 +1127,7 @@ function sessionPlanForDay(weekIndex, day, ctx) {
     const extra = clamp(minutes - used, 0, 25);
     const details = [`主課：${sets} × ${repMin}'（跑/休 4:1，休 ${restMin}'）`];
     if (extra >= 5) details.push(`加量：閾值續跑 ${Math.round(extra)}'`);
-    details.push("其餘時間作熱身／放鬆");
+    details.push("另加：熱身／放鬆");
     const workoutMinutes = minutes;
     return {
       zone: 4,
@@ -1141,7 +1141,7 @@ function sessionPlanForDay(weekIndex, day, ctx) {
     const workTarget = clamp(6 + idx * 2, 6, 18);
     const repMin = workTarget <= 8 ? 2 : workTarget <= 12 ? 3 : 4;
     const reps = Math.max(1, Math.round(workTarget / repMin));
-    const details = [`主課：${reps} × ${repMin}'（跑/休 1:1）`, `強度時間：約 ${clamp(reps * repMin, 6, 18)}'`, "其餘時間作熱身／放鬆"];
+    const details = [`主課：${reps} × ${repMin}'（跑/休 1:1）`, `強度時間：約 ${clamp(reps * repMin, 6, 18)}'`, "另加：熱身／放鬆"];
     const workoutMinutes = minutes;
     return {
       zone: 5,
@@ -1156,7 +1156,7 @@ function sessionPlanForDay(weekIndex, day, ctx) {
     const repSec = workTarget <= 8 ? 30 : 60;
     const repMin = repSec === 30 ? 0.5 : 1;
     const reps = Math.max(1, Math.round(workTarget / repMin));
-    const details = [`主課：${reps} × ${repSec}s（跑/休 1:1）`, `強度時間：約 ${clamp(Math.round(reps * repMin), 5, 16)}'`, "其餘時間作熱身／放鬆"];
+    const details = [`主課：${reps} × ${repSec}s（跑/休 1:1）`, `強度時間：約 ${clamp(Math.round(reps * repMin), 5, 16)}'`, "另加：熱身／放鬆"];
     const workoutMinutes = minutes;
     return {
       zone: 6,
