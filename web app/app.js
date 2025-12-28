@@ -3598,6 +3598,7 @@ function applyAiPlanUpdates(updates) {
         const rpe = clamp(Number(su?.rpe) || 1, 1, 10);
 
         ensureSessionWorkouts(s);
+        s.note = "";
         const count = clamp(Number(s.workoutsCount) || 1, 1, 10);
         const base = count ? Math.floor(durationMinutes / count) : durationMinutes;
         let rem = count ? durationMinutes - base * count : 0;
@@ -4199,8 +4200,6 @@ function init() {
   if (typeof persisted?.connected === "boolean") {
     state.connected = persisted.connected;
   }
-  recomputeFormulaVolumes();
-  reassignAllRacesByDate();
   updateHeader();
   wireCalendarSizer();
   renderCalendar();
