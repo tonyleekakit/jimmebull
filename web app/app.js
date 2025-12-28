@@ -419,7 +419,7 @@ function computeCoachBlockByRules() {
     }
 
     setBlock(idx, "Peak");
-    for (let d = 2; d <= 4; d++) setBlock(idx - d, "Build");
+    for (let d = 1; d <= 3; d++) setBlock(idx - d, "Build");
   });
 
   let baseCount = 0;
@@ -2303,7 +2303,31 @@ function applyAnnualVolumeToWeeks(annualVolumeHrs) {
   const targetTotal = Math.round(total * 10) / 10;
   const before = state.weeks.map((w) => `${w?.volumeHrs ?? ""}|${w?.volumeMode ?? ""}|${w?.volumeFactor ?? ""}`).join(";");
 
-  const blocks = state.weeks.map((w) => normalizeBlockValue(w?.block || "") || "Base");
+  const weeks = state.weeks;
+  const blocks = weeks.map((w) => normalizeBlockValue(w?.block || "") || "Base");
+  const hasRace = weeks.map((w) => Array.isArray(w?.races) && w.races.length > 0);
+  const isPreRaceWeek = hasRace.map((_, i) => i < 51 && hasRace[i + 1]);
+
+  const weeklyAvg = targetTotal / 52;
+  const volumeLevel = clamp((weeklyAvg - 3) / 10, 0, 1);
+  const lerp = (a, b, t) => a + (b - a) * clamp(t, 0, 1);
+
+  const factorSpecForWeek = (weekIndex) => {
+    const idx = clamp(Number(weekIndex) || 0, 0, 51);
+    const v = normalizeBlockValue(blocks[idx] || "") || "Base";
+
+    if (v === "Peak") {
+      if (hasRace[idx]) return { min: 0.6, max: 0.6, factor: 0.6 };
+      if (isPreRaceWeek[idx]) return { min: 0.8, max: 0.8, factor: 0.8 };
+      return { min: 0.8, max: 0.8, factor: 0.8 };
+    }
+    if (v === "Base") return { min: 1.1, max: 1.5, factor: lerp(1.1, 1.5, volumeLevel) };
+    if (v === "Deload") return { min: 0.5, max: 0.8, factor: lerp(0.5, 0.8, volumeLevel) };
+    if (v === "Build") return { min: 1.0, max: 1.1, factor: lerp(1.0, 1.1, volumeLevel) };
+    if (v === "Transition") return { min: 0.8, max: 1.1, factor: lerp(0.8, 1.1, volumeLevel) };
+    return { min: 1.0, max: 1.0, factor: 1.0 };
+  };
+
   const meanPrev = (arr, endIndex, lookback) => {
     const end = clamp(Number(endIndex) || 0, 0, arr.length);
     const back = clamp(Number(lookback) || 0, 0, 10);
@@ -2311,88 +2335,65 @@ function applyAnnualVolumeToWeeks(annualVolumeHrs) {
     let sum = 0;
     let count = 0;
     for (let i = start; i < end; i++) {
-      sum += Number(arr[i]) || 0;
-      count++;
+      const v = Number(arr[i]) || 0;
+      if (v > 0) {
+        sum += v;
+        count++;
+      }
     }
     return count ? sum / count : 0;
   };
 
-  const boundsForWeek = (block, prev, chronic4) => {
-    const v = normalizeBlockValue(block || "") || "Base";
-    const p = Number.isFinite(prev) && prev > 0 ? prev : 1;
-    const c = Number.isFinite(chronic4) && chronic4 > 0 ? chronic4 : p;
-
-    let desiredFactor = 1;
-    let trendMinFactor = 0.97;
-    let trendMaxFactor = 1.03;
-    let acwrLo = 0.85;
-    let acwrHi = 1.25;
-    if (v === "Base") {
-      desiredFactor = 1.1;
-      trendMinFactor = 1.03;
-      trendMaxFactor = 1.12;
-      acwrLo = 0.9;
-      acwrHi = 1.3;
-    } else if (v === "Build" || v === "Transition") {
-      desiredFactor = 1.0;
-      trendMinFactor = 0.97;
-      trendMaxFactor = 1.03;
-      acwrLo = 0.85;
-      acwrHi = 1.25;
-    } else if (v === "Peak") {
-      desiredFactor = 0.9;
-      trendMinFactor = 0.85;
-      trendMaxFactor = 0.98;
-      acwrLo = 0.8;
-      acwrHi = 1.05;
-    } else if (v === "Deload") {
-      desiredFactor = 0.82;
-      trendMinFactor = 0.7;
-      trendMaxFactor = 0.9;
-      acwrLo = 0.7;
-      acwrHi = 0.95;
-    } else {
-      desiredFactor = 1.0;
-      trendMinFactor = 0.97;
-      trendMaxFactor = 1.03;
-      acwrLo = 0.85;
-      acwrHi = 1.25;
-    }
-
-    let lo = Math.max(0.01, p * trendMinFactor, c * acwrLo);
-    let hi = Math.max(lo, Math.min(p * trendMaxFactor, c * acwrHi));
-    let raw = p * desiredFactor;
-
-    return { min: lo, max: hi, raw };
+  const defaultWeekVolume = (weekIndex) => {
+    const idx = clamp(Number(weekIndex) || 0, 0, 51);
+    const v = normalizeBlockValue(blocks[idx] || "") || "Base";
+    if (v === "Deload") return Math.max(0.1, weeklyAvg * 0.7);
+    if (v === "Peak") return Math.max(0.1, weeklyAvg * (hasRace[idx] ? 0.6 : 0.8));
+    if (v === "Transition") return Math.max(0.1, weeklyAvg * 0.95);
+    return Math.max(0.1, weeklyAvg);
   };
 
   const shape = new Array(52).fill(0);
-  shape[0] = 1;
-  for (let i = 1; i < 52; i++) {
-    const prev = shape[i - 1] || 1;
-    const chronic4 = meanPrev(shape, i, 4) || prev;
-    const b = boundsForWeek(blocks[i], prev, chronic4);
-    shape[i] = clamp(b.raw, b.min, b.max);
+  for (let i = 0; i < 4; i++) shape[i] = defaultWeekVolume(i);
+  for (let i = 4; i < 52; i++) {
+    const chronic4 = meanPrev(shape, i, 4) || defaultWeekVolume(i);
+    const spec = factorSpecForWeek(i);
+    const lo = Math.max(0.01, chronic4 * spec.min);
+    const hi = Math.max(lo, chronic4 * spec.max);
+    const raw = chronic4 * spec.factor;
+    shape[i] = clamp(raw, lo, hi);
   }
 
-  const sumShape = shape.reduce((a, b) => a + b, 0) || 1;
-  let scaled = shape.map((v) => (v * targetTotal) / sumShape);
+  const sumShape = shape.reduce((a, b) => a + b, 0);
+  if (!Number.isFinite(sumShape) || sumShape <= 0) return false;
+  const scaled = shape.map((v) => (v * targetTotal) / sumShape);
 
-  for (let iter = 0; iter < 6; iter++) {
-    const rounded = scaled.map((v) => Math.round(v * 10) / 10);
-    const sumR = rounded.reduce((a, b) => a + b, 0) || 1;
-    const diff = targetTotal - sumR;
-    if (Math.abs(diff) < 0.05) {
-      scaled = rounded;
-      break;
+  const targetTenths = Math.round(targetTotal * 10);
+  const rawTenths = scaled.map((v) => Math.max(0, Number(v) || 0) * 10);
+  const outTenths = rawTenths.map((v) => Math.floor(v + 1e-9));
+  let sumTenths = outTenths.reduce((a, b) => a + b, 0);
+  let diffTenths = targetTenths - sumTenths;
+
+  const order = rawTenths
+    .map((v, i) => ({ i, frac: v - outTenths[i] }))
+    .sort((a, b) => b.frac - a.frac);
+
+  if (diffTenths > 0) {
+    for (let k = 0; k < order.length && diffTenths > 0; k++) {
+      outTenths[order[k].i] += 1;
+      diffTenths -= 1;
     }
-    const factor = targetTotal / sumR;
-    scaled = rounded.map((v) => v * factor);
+  } else if (diffTenths < 0) {
+    const rev = [...order].reverse();
+    for (let k = 0; k < rev.length && diffTenths < 0; k++) {
+      if (outTenths[rev[k].i] <= 0) continue;
+      outTenths[rev[k].i] -= 1;
+      diffTenths += 1;
+    }
   }
 
-  const finalRounded = scaled.map((v) => Math.round(v * 10) / 10);
-  state.weeks.forEach((w, i) => {
-    const v = finalRounded[i] || 0;
+  weeks.forEach((w, i) => {
+    const v = (outTenths[i] || 0) / 10;
     w.volumeHrs = v > 0 ? v.toFixed(1) : "";
     w.volumeMode = "direct";
     w.volumeFactor = 1;
