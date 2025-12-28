@@ -456,6 +456,98 @@ function applyCoachBlockRules() {
   return changed;
 }
 
+function phasesForRaceDistance(distanceKm, kind) {
+  const d = Number(distanceKm);
+  const k = String(kind || "").trim();
+  if (!Number.isFinite(d) || d <= 0) return ["Tempo", "Threshold"];
+  if (k === "trail") {
+    if (d <= 12) return ["Threshold", "VO2Max"];
+    if (d <= 25) return ["Aerobic Endurance", "Threshold"];
+    if (d <= 45) return ["Aerobic Endurance", "Tempo"];
+    return ["Aerobic Endurance", "Tempo"];
+  }
+  if (d <= 5) return ["VO2Max", "Anaerobic"];
+  if (d <= 12) return ["Threshold", "VO2Max"];
+  if (d <= 25) return ["Tempo", "Threshold"];
+  return ["Aerobic Endurance", "Tempo"];
+}
+
+function computeCoachPhasesByRules() {
+  const out = new Array(52).fill(null).map(() => []);
+
+  const nextTargetRaceByWeek = new Array(52).fill(null);
+  for (let i = 0; i < 52; i++) {
+    for (let j = i; j < 52; j++) {
+      const w = state.weeks[j];
+      if (!w) continue;
+      const pr = String(w.priority || "").trim().toUpperCase();
+      if (pr !== "A" && pr !== "B") continue;
+      const races = Array.isArray(w.races) ? w.races : [];
+      const candidates = races
+        .map((r) => {
+          const date = String(r?.date || "").trim();
+          const dist = Number(r?.distanceKm);
+          const distanceKm = Number.isFinite(dist) && dist > 0 ? dist : null;
+          const kind = typeof r?.kind === "string" ? r.kind : "";
+          return { date, distanceKm, kind };
+        })
+        .filter((r) => r.date && r.distanceKm);
+      if (!candidates.length) continue;
+      candidates.sort((a, b) => a.date.localeCompare(b.date));
+      nextTargetRaceByWeek[i] = candidates[0];
+      break;
+    }
+  }
+
+  for (let i = 0; i < 52; i++) {
+    const w = state.weeks[i];
+    const block = normalizeBlockValue(w?.block || "");
+    if (block === "Base") {
+      out[i] = ["Aerobic Endurance"];
+      continue;
+    }
+    if (block === "Deload") {
+      out[i] = ["Deload"];
+      continue;
+    }
+    if (block === "Peak") {
+      out[i] = ["Peaking"];
+      continue;
+    }
+    if (block === "Build") {
+      const race = nextTargetRaceByWeek[i];
+      out[i] = phasesForRaceDistance(race?.distanceKm, race?.kind);
+      continue;
+    }
+    out[i] = [];
+  }
+
+  return out.map((p) => normalizePhases(p));
+}
+
+function applyCoachPhaseRules() {
+  if (!state || !Array.isArray(state.weeks) || state.weeks.length !== 52) return false;
+  const phases = computeCoachPhasesByRules();
+  let changed = false;
+  for (let i = 0; i < 52; i++) {
+    const w = state.weeks[i];
+    if (!w) continue;
+    const cur = normalizePhases(w.phases);
+    const next = normalizePhases(phases[i]);
+    if (cur.length !== next.length || cur.some((x, idx) => x !== next[idx])) {
+      w.phases = next;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function applyCoachAutoRules() {
+  const a = applyCoachBlockRules();
+  const b = applyCoachPhaseRules();
+  return a || b;
+}
+
 const PHASE_LABELS_ZH = {
   "Aerobic Endurance": "有氧耐力",
   Tempo: "節奏",
@@ -1602,6 +1694,7 @@ function renderCalendar() {
         select.addEventListener("change", () => {
           pushHistory();
           w.block = select.value;
+          applyCoachPhaseRules();
           persistState();
           renderCalendar();
         });
@@ -2336,7 +2429,7 @@ function reassignAllRacesByDate() {
     if (!Array.isArray(w.races) || w.races.length === 0) w.priority = "";
   });
 
-  applyCoachBlockRules();
+  applyCoachAutoRules();
 }
 
 function serializeStateForAiPlan() {
@@ -2427,7 +2520,7 @@ function applyAiPlanUpdates(updates) {
     }
   });
 
-  applyCoachBlockRules();
+  applyCoachAutoRules();
   recomputeFormulaVolumes();
   persistState();
   updateHeader();
@@ -2506,8 +2599,8 @@ function openAiPlanModal() {
     submit.textContent = "生成中…";
 
     try {
-      const blocksChanged = applyCoachBlockRules();
-      if (blocksChanged) {
+      const autoChanged = applyCoachAutoRules();
+      if (autoChanged) {
         persistState();
         renderCalendar();
         renderCharts();
@@ -2626,7 +2719,7 @@ function openRaceInputModal() {
         if (w && (!Array.isArray(w.races) || w.races.length === 0)) {
           w.priority = "";
         }
-        applyCoachBlockRules();
+        applyCoachAutoRules();
         persistState();
         renderList();
         renderCalendar();
@@ -2736,7 +2829,7 @@ function openRaceInputModal() {
     kind.value = "";
     priority.value = "";
     w.priority = racePriority;
-    applyCoachBlockRules();
+    applyCoachAutoRules();
     persistState();
     renderList();
     renderCalendar();
