@@ -1113,25 +1113,22 @@ function sessionPlanForDay(weekIndex, day, ctx) {
   }
 
   if (phase === "Tempo") {
-    const main = clamp(minutes, 30, 45);
+    const idx = phaseStreakIndex(weekIndex, phase);
+    const main = clamp(30 + idx * 5, 30, 45);
     const details = [`主課：節奏跑 ${main}'（30–45'，可每週 +5'）`, "另加：熱身／放鬆"];
-    return { zone: 3, rpe: rpeOverride ?? 6, workoutMinutes: minutes, noteBody: buildAutoNoteBodyForPlan({ title: "節奏", details, minutes, rpeText: "5–6" }) };
+    return { zone: 3, rpe: rpeOverride ?? 6, workoutMinutes: main, noteBody: buildAutoNoteBodyForPlan({ title: "節奏", details, minutes: main, rpeText: "5–6" }) };
   }
   if (phase === "Threshold") {
     const idx = phaseStreakIndex(weekIndex, phase);
     const repMin = clamp(6 + Math.floor(idx / 2) * 2, 6, 12);
     const restMin = Math.max(1, Math.round(repMin / 4));
-    let sets = clamp(3 + Math.floor(idx / 2), 3, 5);
-    const usedFor = (s) => Math.max(0, s * repMin + Math.max(0, s - 1) * restMin);
-    while (sets > 3 && usedFor(sets) > minutes) sets--;
-    const baseUsed = usedFor(sets);
-    const remain = Math.max(0, minutes - baseUsed);
     const extraTarget = idx >= 3 ? clamp(10 + (idx - 3) * 5, 10, 20) : 0;
-    const extra = extraTarget > 0 ? clamp(remain, 0, extraTarget) : 0;
+    const sets = clamp(3 + Math.floor(idx / 2), 3, 5);
+    const extra = extraTarget;
     const details = [`主課：${sets} × ${repMin}'（跑/休 4:1，休 ${restMin}'）`];
     if (extra >= 10) details.push(`進階：完成兩組後，再進行 ${Math.round(extra)}' 乳酸跑`);
     details.push("另加：熱身／放鬆");
-    const workoutMinutes = minutes;
+    const workoutMinutes = Math.max(0, Math.round(sets * repMin + extra));
     return {
       zone: 4,
       rpe: rpeOverride ?? 8,
@@ -1144,8 +1141,8 @@ function sessionPlanForDay(weekIndex, day, ctx) {
     const workTotal = clamp(5 + idx * 2, 5, 15);
     const repMin = workTotal <= 6 ? 1 : workTotal <= 9 ? 2 : workTotal <= 12 ? 3 : 4;
     const reps = Math.max(1, Math.round(workTotal / repMin));
-    const details = [`主課：${reps} × ${repMin}'（跑/休 1:1）`, `總量：由 5' 逐週加到最多 15'（本週 ${workTotal}'）`, "另加：熱身／放鬆"];
-    const workoutMinutes = minutes;
+    const details = [`主課：${reps} × ${repMin}'（跑/休 1:1）`, "總量：由 5' 逐週加到最多 15'", "另加：熱身／放鬆"];
+    const workoutMinutes = workTotal;
     return {
       zone: 5,
       rpe: rpeOverride ?? 9,
@@ -1159,8 +1156,8 @@ function sessionPlanForDay(weekIndex, day, ctx) {
     const repSec = workTotal <= 8 ? 30 : 60;
     const repMin = repSec === 30 ? 0.5 : 1;
     const reps = Math.max(1, Math.round(workTotal / repMin));
-    const details = [`主課：${reps} × ${repSec}s（跑/休 1:1）`, `總量：由 5' 逐週加到最多 15'（本週 ${workTotal}'）`, "另加：熱身／放鬆"];
-    const workoutMinutes = minutes;
+    const details = [`主課：${reps} × ${repSec}s（跑/休 1:1）`, "總量：由 5' 逐週加到最多 15'", "另加：熱身／放鬆"];
+    const workoutMinutes = workTotal;
     return {
       zone: 6,
       rpe: rpeOverride ?? 10,
@@ -1257,23 +1254,15 @@ function qualityWorkoutMinutesForPhase(weekIndex, phase) {
   }
   if (p === "Threshold") {
     const repMin = clamp(6 + Math.floor(idx / 2) * 2, 6, 12);
-    const restMin = Math.max(1, Math.round(repMin / 4));
     const sets = clamp(3 + Math.floor(idx / 2), 3, 5);
     const extra = idx >= 3 ? clamp(10 + (idx - 3) * 5, 10, 20) : 0;
-    return Math.max(0, Math.round(sets * repMin + Math.max(0, sets - 1) * restMin + extra));
+    return Math.max(0, Math.round(sets * repMin + extra));
   }
   if (p === "VO2Max") {
-    const workTotal = clamp(5 + idx * 2, 5, 15);
-    const repMin = workTotal <= 6 ? 1 : workTotal <= 9 ? 2 : workTotal <= 12 ? 3 : 4;
-    const reps = Math.max(1, Math.round(workTotal / repMin));
-    return Math.max(0, Math.round(reps * repMin * 2));
+    return clamp(5 + idx * 2, 5, 15);
   }
   if (p === "Anaerobic") {
-    const workTotal = clamp(5 + idx * 2, 5, 15);
-    const repSec = workTotal <= 8 ? 30 : 60;
-    const repMin = repSec === 30 ? 0.5 : 1;
-    const reps = Math.max(1, Math.round(workTotal / repMin));
-    return Math.max(0, Math.round(reps * repMin * 2));
+    return clamp(5 + idx * 2, 5, 15);
   }
   return clamp(50, 30, 110);
 }
@@ -1433,10 +1422,10 @@ function computeWeekDayPlans(weekIndex) {
   const plans = day.map((d) => ({ ...d }));
   const options =
     block === "Peak"
-      ? { minEasy: 0, maxEasy: 0, minLong: 30, maxLong: 120, minQuality: 30, maxQuality: 110 }
+      ? { minEasy: 0, maxEasy: 90, minLong: 30, maxLong: 120, minQuality: 5, maxQuality: 110 }
       : block === "Deload" || block === "Transition"
         ? { minEasy: 0, maxEasy: 90, minLong: 0, maxLong: 0, minQuality: 0, maxQuality: 0 }
-        : { minEasy: 30, maxEasy: 120, minLong: 30, maxLong: 180, minQuality: 30, maxQuality: 110 };
+        : { minEasy: 0, maxEasy: 120, minLong: 30, maxLong: 180, minQuality: 5, maxQuality: 110 };
 
   const basePlans = plans.map((p) => ({ ...p, minutes: Math.max(0, Math.round(Number(p.minutes) || 0)) }));
   const baseIdx = blockStreakIndex(idx, "Base");
@@ -1475,8 +1464,13 @@ function computeWeekDayPlans(weekIndex) {
       basePlans[i].minutes = (Number(basePlans[i].minutes) || 0) + 60;
     }
     if (rem > 0) {
-      const i = easyIndices[chunks % easyIndices.length];
-      basePlans[i].minutes = (Number(basePlans[i].minutes) || 0) + rem;
+      if (chunks < easyIndices.length) {
+        const i = easyIndices[chunks];
+        basePlans[i].minutes = Math.max(0, Math.round(rem));
+      } else {
+        const i = easyIndices[chunks % easyIndices.length];
+        basePlans[i].minutes = (Number(basePlans[i].minutes) || 0) + rem;
+      }
     }
   } else if (diff < 0) {
     const reduceOrder = ["Easy", "Long", "Quality", "Race"];
