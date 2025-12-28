@@ -2322,13 +2322,6 @@ function applyAnnualVolumeToWeeks(annualVolumeHrs) {
     const p = Number.isFinite(prev) && prev > 0 ? prev : 1;
     const c = Number.isFinite(chronic4) && chronic4 > 0 ? chronic4 : p;
 
-    if (v === "Deload") {
-      const lo = Math.max(0.01, c * 0.5);
-      const hi = Math.max(lo, c * 0.8);
-      const raw = c * 0.7;
-      return { min: lo, max: hi, raw };
-    }
-
     let desiredFactor = 1;
     let trendMinFactor = 0.97;
     let trendMaxFactor = 1.03;
@@ -2352,6 +2345,12 @@ function applyAnnualVolumeToWeeks(annualVolumeHrs) {
       trendMaxFactor = 0.98;
       acwrLo = 0.8;
       acwrHi = 1.05;
+    } else if (v === "Deload") {
+      desiredFactor = 0.82;
+      trendMinFactor = 0.7;
+      trendMaxFactor = 0.9;
+      acwrLo = 0.7;
+      acwrHi = 0.95;
     } else {
       desiredFactor = 1.0;
       trendMinFactor = 0.97;
