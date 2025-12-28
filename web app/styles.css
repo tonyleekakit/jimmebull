@@ -1121,6 +1121,11 @@ body {
   gap: 10px;
 }
 
+.modal--scroll {
+  max-height: calc(100vh - 36px);
+  overflow-y: auto;
+}
+
 .volumeModal {
   width: min(720px, 100%);
 }

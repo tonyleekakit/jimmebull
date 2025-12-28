@@ -3401,6 +3401,7 @@ function openAiPlanModal() {
   });
 
   const modal = el("div", "modal");
+  modal.classList.add("modal--scroll");
   const title = el("div", "modal__title", "AI 助手 · 自動編排");
   const subtitle = el("div", "modal__subtitle", "按比賽日期／優先級分週期、填訓練區與訓練量，並預填 Day 時長與 RPE");
 
@@ -3538,6 +3539,7 @@ function openRaceInputModal() {
   });
 
   const modal = el("div", "modal");
+  modal.classList.add("modal--scroll");
   const title = el("div", "modal__title", "輸入比賽");
   const subtitle = el("div", "modal__subtitle", "輸入比賽名稱、日期、距離、項目及優先級；系統會按日期更新相應週的比賽／優先級");
 
