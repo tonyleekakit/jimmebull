@@ -313,7 +313,10 @@ function buildAiStateSlice(inputState, startIndex, endIndex) {
       const name = typeof r?.name === "string" ? r.name.trim() : "";
       const date = typeof r?.date === "string" ? r.date.trim() : "";
       if (!name || !date) return;
-      races.push({ index: idx, weekNo: w?.weekNo, monday: w?.monday, date, name, priority: pr });
+      const dist = Number(r?.distanceKm);
+      const distanceKm = Number.isFinite(dist) && dist > 0 ? dist : null;
+      const kind = typeof r?.kind === "string" ? r.kind : "";
+      races.push({ index: idx, weekNo: w?.weekNo, monday: w?.monday, date, name, priority: pr, distanceKm, kind });
     });
   });
   races.sort((a, b) => String(a.date).localeCompare(String(b.date)) || Number(a.index) - Number(b.index));
@@ -330,6 +333,8 @@ function buildAiStateSlice(inputState, startIndex, endIndex) {
             .map((r) => ({
               name: typeof r?.name === "string" ? r.name.trim() : "",
               date: typeof r?.date === "string" ? r.date.trim() : "",
+              distanceKm: Number.isFinite(Number(r?.distanceKm)) && Number(r.distanceKm) > 0 ? Number(r.distanceKm) : null,
+              kind: typeof r?.kind === "string" ? r.kind : "",
             }))
             .filter((r) => r.name && r.date)
         : [],

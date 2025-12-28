@@ -1264,7 +1264,14 @@ function snapshotForHistory() {
     ytdVolumeHrs: Number.isFinite(state.ytdVolumeHrs) ? state.ytdVolumeHrs : null,
     selectedWeekIndex: state.selectedWeekIndex,
     weeks: state.weeks.map((w) => ({
-      races: Array.isArray(w.races) ? w.races.map((r) => ({ name: r?.name || "", date: r?.date || "" })) : [],
+      races: Array.isArray(w.races)
+        ? w.races.map((r) => ({
+            name: r?.name || "",
+            date: r?.date || "",
+            distanceKm: Number.isFinite(Number(r?.distanceKm)) && Number(r.distanceKm) > 0 ? Number(r.distanceKm) : null,
+            kind: typeof r?.kind === "string" ? r.kind : "",
+          }))
+        : [],
       priority: w.priority || "",
       block: w.block || "",
       season: w.season || "",
@@ -1305,6 +1312,8 @@ function applyHistorySnapshot(snapshot) {
           .map((r) => ({
             name: typeof r?.name === "string" ? r.name : "",
             date: typeof r?.date === "string" ? r.date : "",
+            distanceKm: Number.isFinite(Number(r?.distanceKm)) && Number(r.distanceKm) > 0 ? Number(r.distanceKm) : null,
+            kind: typeof r?.kind === "string" ? r.kind : "",
           }))
           .filter((r) => r.name.trim() && r.date)
       : [];
@@ -2302,7 +2311,10 @@ function reassignAllRacesByDate() {
       const name = (r?.name || "").trim();
       const date = (r?.date || "").trim();
       if (!name || !date) return;
-      entries.push({ name, date });
+      const dist = Number(r?.distanceKm);
+      const distanceKm = Number.isFinite(dist) && dist > 0 ? dist : null;
+      const kind = typeof r?.kind === "string" ? r.kind : "";
+      entries.push({ name, date, distanceKm, kind });
     });
   }
 
@@ -2317,7 +2329,7 @@ function reassignAllRacesByDate() {
     if (!w) return;
     if (!Array.isArray(w.races)) w.races = [];
     const exists = w.races.some((x) => (x?.date || "") === r.date && (x?.name || "").trim() === r.name);
-    if (!exists) w.races.push({ name: r.name, date: r.date });
+    if (!exists) w.races.push({ name: r.name, date: r.date, distanceKm: r.distanceKm ?? null, kind: r.kind || "" });
   });
 
   state.weeks.forEach((w) => {
@@ -2340,6 +2352,8 @@ function serializeStateForAiPlan() {
             .map((r) => ({
               name: typeof r?.name === "string" ? r.name.trim() : "",
               date: typeof r?.date === "string" ? r.date : "",
+              distanceKm: Number.isFinite(Number(r?.distanceKm)) && Number(r.distanceKm) > 0 ? Number(r.distanceKm) : null,
+              kind: typeof r?.kind === "string" ? r.kind : "",
             }))
             .filter((r) => r.name && r.date)
         : [],
@@ -2441,7 +2455,11 @@ function openAiPlanModal() {
       const name = (r?.name || "").trim();
       const date = (r?.date || "").trim();
       if (!name || !date) return;
-      rows.push({ weekNo: w.weekNo, date, name, priority: w.priority || "" });
+      const dist = Number(r?.distanceKm);
+      const distText = Number.isFinite(dist) && dist > 0 ? `${dist}km` : "";
+      const kindRaw = String(r?.kind || "").trim();
+      const kindText = kindRaw === "trail" ? "越野跑" : kindRaw === "road" ? "路跑" : kindRaw;
+      rows.push({ weekNo: w.weekNo, date, name, priority: w.priority || "", distText, kindText });
     });
   });
   rows.sort((a, b) => a.date.localeCompare(b.date) || a.weekNo - b.weekNo || a.name.localeCompare(b.name));
@@ -2450,7 +2468,11 @@ function openAiPlanModal() {
   } else {
     rows.forEach((r) => {
       const row = el("div", "raceRow");
-      row.appendChild(el("div", "raceRow__name", `${weekLabelZh(r.weekNo)} · ${r.date} · ${r.name} · ${r.priority || "—"}`));
+      const meta = [r.distText, r.kindText].filter(Boolean).join(" · ");
+      const parts = [weekLabelZh(r.weekNo), r.date, r.name];
+      if (meta) parts.push(meta);
+      parts.push(r.priority || "—");
+      row.appendChild(el("div", "raceRow__name", parts.join(" · ")));
       racesBox.appendChild(row);
     });
   }
@@ -2560,7 +2582,7 @@ function openRaceInputModal() {
 
   const modal = el("div", "modal");
   const title = el("div", "modal__title", "輸入比賽");
-  const subtitle = el("div", "modal__subtitle", "輸入比賽名稱、日期及優先級；系統會按日期更新相應週的比賽／優先級");
+  const subtitle = el("div", "modal__subtitle", "輸入比賽名稱、日期、距離、項目及優先級；系統會按日期更新相應週的比賽／優先級");
 
   const list = el("div", "raceList");
   const renderList = () => {
@@ -2572,7 +2594,11 @@ function openRaceInputModal() {
         const name = (r?.name || "").trim();
         const date = (r?.date || "").trim();
         if (!name || !date) return;
-        rows.push({ weekIdx, weekNo: w.weekNo, raceIdx, name, date });
+        const dist = Number(r?.distanceKm);
+        const distText = Number.isFinite(dist) && dist > 0 ? `${dist}km` : "";
+        const kindRaw = String(r?.kind || "").trim();
+        const kindText = kindRaw === "trail" ? "越野跑" : kindRaw === "road" ? "路跑" : kindRaw;
+        rows.push({ weekIdx, weekNo: w.weekNo, raceIdx, name, date, distText, kindText });
       });
     });
 
@@ -2585,7 +2611,10 @@ function openRaceInputModal() {
 
     rows.forEach((r) => {
       const row = el("div", "raceRow");
-      row.appendChild(el("div", "raceRow__name", `${weekLabelZh(r.weekNo)} · ${r.date} · ${r.name}`));
+      const meta = [r.distText, r.kindText].filter(Boolean).join(" · ");
+      const parts = [weekLabelZh(r.weekNo), r.date, r.name];
+      if (meta) parts.push(meta);
+      row.appendChild(el("div", "raceRow__name", parts.join(" · ")));
       const del = el("button", "iconBtn", "×");
       del.type = "button";
       del.addEventListener("click", () => {
@@ -2620,6 +2649,28 @@ function openRaceInputModal() {
   date.type = "date";
   date.required = true;
 
+  const distanceKm = document.createElement("input");
+  distanceKm.className = "input";
+  distanceKm.type = "number";
+  distanceKm.placeholder = "距離（公里）";
+  distanceKm.min = "0";
+  distanceKm.step = "0.1";
+  distanceKm.required = true;
+
+  const kind = document.createElement("select");
+  kind.className = "input";
+  kind.required = true;
+  [
+    { v: "", t: "項目" },
+    { v: "road", t: "路跑" },
+    { v: "trail", t: "越野跑" },
+  ].forEach(({ v, t }) => {
+    const opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = t;
+    kind.appendChild(opt);
+  });
+
   const priority = document.createElement("select");
   priority.className = "input";
   priority.required = true;
@@ -2640,6 +2691,8 @@ function openRaceInputModal() {
 
   form.appendChild(name);
   form.appendChild(date);
+  form.appendChild(distanceKm);
+  form.appendChild(kind);
   form.appendChild(priority);
   form.appendChild(add);
 
@@ -2647,8 +2700,18 @@ function openRaceInputModal() {
     e.preventDefault();
     const raceName = name.value.trim();
     const raceDate = date.value;
+    const raceDistanceKm = Number(String(distanceKm.value || "").trim());
+    const raceKind = kind.value;
     const racePriority = priority.value;
     if (!raceName || !raceDate || !racePriority) return;
+    if (!Number.isFinite(raceDistanceKm) || raceDistanceKm <= 0) {
+      showToast("請輸入有效距離（公里）", { variant: "warn", durationMs: 1800 });
+      return;
+    }
+    if (!raceKind) {
+      showToast("請選擇項目", { variant: "warn", durationMs: 1800 });
+      return;
+    }
     const idx = weekIndexForRaceYmd(raceDate);
     if (idx === null) {
       showToast("日期不在 52 週計畫範圍內", { variant: "warn", durationMs: 1800 });
@@ -2657,12 +2720,20 @@ function openRaceInputModal() {
     pushHistory();
     const w = state.weeks[idx];
     if (!Array.isArray(w.races)) w.races = [];
-    const exists = w.races.some((r) => (r?.date || "") === raceDate && (r?.name || "").trim() === raceName);
-    if (!exists) {
-      w.races.push({ name: raceName, date: raceDate });
+    const existingIndex = w.races.findIndex((r) => (r?.date || "") === raceDate && (r?.name || "").trim() === raceName);
+    if (existingIndex >= 0) {
+      const ex = w.races[existingIndex];
+      if (ex && typeof ex === "object") {
+        ex.distanceKm = raceDistanceKm;
+        ex.kind = raceKind;
+      }
+    } else {
+      w.races.push({ name: raceName, date: raceDate, distanceKm: raceDistanceKm, kind: raceKind });
     }
     name.value = "";
     date.value = "";
+    distanceKm.value = "";
+    kind.value = "";
     priority.value = "";
     w.priority = racePriority;
     applyCoachBlockRules();
@@ -2862,6 +2933,8 @@ function init() {
             .map((r) => ({
               name: typeof r?.name === "string" ? r.name : "",
               date: typeof r?.date === "string" ? r.date : "",
+              distanceKm: Number.isFinite(Number(r?.distanceKm)) && Number(r.distanceKm) > 0 ? Number(r.distanceKm) : null,
+              kind: typeof r?.kind === "string" ? r.kind : "",
             }))
             .filter((r) => r.name.trim() && r.date)
         : [];
