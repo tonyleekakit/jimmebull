@@ -220,6 +220,15 @@ body {
   align-items: center;
 }
 
+.annualVolumeField {
+  display: grid;
+  gap: 4px;
+}
+
+.annualVolumeField .input {
+  width: 160px;
+}
+
 .calendarSummary {
   margin: 0 0 10px;
   border: 1px solid var(--border);

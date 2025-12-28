@@ -570,7 +570,8 @@ function applyCoachPhaseRules() {
 function applyCoachAutoRules() {
   const a = applyCoachBlockRules();
   const b = applyCoachPhaseRules();
-  return a || b;
+  const c = applyAnnualVolumeRules();
+  return a || b || c;
 }
 
 const PHASE_LABELS_ZH = {
@@ -1528,54 +1529,93 @@ function generatePlan() {
   }
 }
 
-function applyYtdVolumeToWeeks(ytdVolumeHrs) {
-  state.ytdVolumeHrs = ytdVolumeHrs;
-  const targetTotal = Math.round(ytdVolumeHrs * 1.1 * 10) / 10;
+function applyAnnualVolumeToWeeks(annualVolumeHrs) {
+  if (!state || !Array.isArray(state.weeks) || state.weeks.length !== 52) return false;
+  const total = Number(annualVolumeHrs);
+  if (!Number.isFinite(total) || total <= 0) return false;
+  state.ytdVolumeHrs = total;
+  const targetTotal = Math.round(total * 10) / 10;
+  const before = state.weeks.map((w) => `${w?.volumeHrs ?? ""}|${w?.volumeMode ?? ""}|${w?.volumeFactor ?? ""}`).join(";");
 
-  const getParamRange = (block) => {
-    const v = normalizeBlockValue(block || "");
-    if (v === "Base") return { min: 1.1, max: 1.3 };
-    if (v === "Build") return { min: 1.0, max: 1.0 };
-    if (v === "Deload") return { min: 0.6, max: 0.8 };
-    if (v === "Peak") return { min: 0.8, max: 1.0 };
-    if (v === "Transition") return { min: 0.6, max: 0.8 };
-    return { min: 1.0, max: 1.0 };
+  const blocks = state.weeks.map((w) => normalizeBlockValue(w?.block || "") || "Base");
+  const meanPrev = (arr, endIndex, lookback) => {
+    const end = clamp(Number(endIndex) || 0, 0, arr.length);
+    const back = clamp(Number(lookback) || 0, 0, 10);
+    const start = Math.max(0, end - back);
+    let sum = 0;
+    let count = 0;
+    for (let i = start; i < end; i++) {
+      sum += Number(arr[i]) || 0;
+      count++;
+    }
+    return count ? sum / count : 0;
   };
 
-  const params = state.weeks.map((w) => {
-    const r = getParamRange(w.block);
-    return (r.min + r.max) / 2;
-  });
+  const boundsForWeek = (block, prev, chronic4) => {
+    const v = normalizeBlockValue(block || "") || "Base";
+    const p = Number.isFinite(prev) && prev > 0 ? prev : 1;
+    const c = Number.isFinite(chronic4) && chronic4 > 0 ? chronic4 : p;
 
-  const seedAvg = targetTotal / 52;
-  const seedTotal = seedAvg * 4;
-  const seedWeights = [];
-  for (let i = 0; i < 4; i++) {
-    const block = normalizeBlockValue(state.weeks[i]?.block || "");
-    let bias = 1;
-    if (i >= 2) {
-      if (block === "Base") bias = 1.2;
-      else if (block === "Deload" || block === "Transition" || block === "Peak") bias = 0.8;
+    let minByTrend = 0.01;
+    let maxByTrend = 10;
+    if (v === "Base") {
+      minByTrend = p * 1.02;
+      maxByTrend = p * 1.08;
+    } else if (v === "Build" || v === "Transition") {
+      minByTrend = p * 0.97;
+      maxByTrend = p * 1.03;
+    } else if (v === "Peak") {
+      minByTrend = p * 0.85;
+      maxByTrend = p * 0.95;
+    } else if (v === "Deload") {
+      minByTrend = p * 0.7;
+      maxByTrend = p * 0.85;
+    } else {
+      minByTrend = p * 0.97;
+      maxByTrend = p * 1.03;
     }
-    seedWeights.push(Math.max(0.01, params[i] * bias));
+
+    let acwrLo = 0.85;
+    let acwrHi = 1.25;
+    if (v === "Peak") {
+      acwrLo = 0.8;
+      acwrHi = 1.05;
+    } else if (v === "Deload") {
+      acwrLo = 0.7;
+      acwrHi = 0.95;
+    }
+
+    const minByAcwr = c * acwrLo;
+    const maxByAcwr = c * acwrHi;
+
+    const lo = Math.max(0.01, minByTrend, minByAcwr);
+    const hi = Math.max(lo, Math.min(maxByTrend, maxByAcwr));
+    return { min: lo, max: hi };
+  };
+
+  const targetMultiplier = (block) => {
+    const v = normalizeBlockValue(block || "") || "Base";
+    if (v === "Base") return 1.06;
+    if (v === "Build" || v === "Transition") return 1.0;
+    if (v === "Peak") return 0.9;
+    if (v === "Deload") return 0.8;
+    return 1.0;
+  };
+
+  const shape = new Array(52).fill(0);
+  shape[0] = 1;
+  for (let i = 1; i < 52; i++) {
+    const prev = shape[i - 1] || 1;
+    const chronic4 = meanPrev(shape, i, 4) || prev;
+    const b = boundsForWeek(blocks[i], prev, chronic4);
+    const target = chronic4 * targetMultiplier(blocks[i]);
+    shape[i] = clamp(target, b.min, b.max);
   }
-  const seedSumW = seedWeights.reduce((a, b) => a + b, 0) || 1;
 
-  const volumes = new Array(52).fill(0);
-  for (let i = 0; i < 4; i++) {
-    volumes[i] = seedTotal * (seedWeights[i] / seedSumW);
-  }
+  const sumShape = shape.reduce((a, b) => a + b, 0) || 1;
+  let scaled = shape.map((v) => (v * targetTotal) / sumShape);
 
-  for (let i = 4; i < 52; i++) {
-    const prevAvg = (volumes[i - 1] + volumes[i - 2] + volumes[i - 3] + volumes[i - 4]) / 4;
-    const next = prevAvg * params[i];
-    volumes[i] = Number.isFinite(next) && next > 0 ? next : prevAvg;
-  }
-
-  const sum0 = volumes.reduce((a, b) => a + b, 0) || 1;
-  let scaled = volumes.map((v) => (v * targetTotal) / sum0);
-
-  for (let iter = 0; iter < 4; iter++) {
+  for (let iter = 0; iter < 6; iter++) {
     const rounded = scaled.map((v) => Math.round(v * 10) / 10);
     const sumR = rounded.reduce((a, b) => a + b, 0) || 1;
     const diff = targetTotal - sumR;
@@ -1594,6 +1634,18 @@ function applyYtdVolumeToWeeks(ytdVolumeHrs) {
     w.volumeMode = "direct";
     w.volumeFactor = 1;
   });
+
+  const after = state.weeks.map((w) => `${w?.volumeHrs ?? ""}|${w?.volumeMode ?? ""}|${w?.volumeFactor ?? ""}`).join(";");
+  return before !== after;
+}
+
+function applyYtdVolumeToWeeks(ytdVolumeHrs) {
+  return applyAnnualVolumeToWeeks(ytdVolumeHrs);
+}
+
+function applyAnnualVolumeRules() {
+  if (!Number.isFinite(state.ytdVolumeHrs) || state.ytdVolumeHrs <= 0) return false;
+  return applyAnnualVolumeToWeeks(state.ytdVolumeHrs);
 }
 
 function updateHeader() {
@@ -1611,7 +1663,13 @@ function updateHeader() {
     volumeTotalEl.textContent = `訓練總量：${totalHrs ? totalHrs.toFixed(1) : "—"} 小時`;
   }
   if (plannedVolume52El) {
-    plannedVolume52El.textContent = `計劃訓練量（52週）：${totalHrs ? totalHrs.toFixed(1) : "—"} 小時`;
+    if (Number.isFinite(state.ytdVolumeHrs) && state.ytdVolumeHrs > 0) {
+      const target = state.ytdVolumeHrs;
+      const diff = Math.round((totalHrs - target) * 10) / 10;
+      plannedVolume52El.textContent = `年總訓練量：${target.toFixed(1)} 小時 · 已分配：${totalHrs ? totalHrs.toFixed(1) : "—"} 小時 · 差：${diff.toFixed(1)} 小時`;
+    } else {
+      plannedVolume52El.textContent = `計劃訓練量（52週）：${totalHrs ? totalHrs.toFixed(1) : "—"} 小時`;
+    }
   }
 }
 
@@ -1720,6 +1778,7 @@ function renderCalendar() {
           pushHistory();
           w.block = select.value;
           applyCoachPhaseRules();
+          applyAnnualVolumeRules();
           persistState();
           renderCalendar();
         });
@@ -2921,6 +2980,49 @@ function wireButtons() {
       connectBtn.textContent = state.connected ? "已連接" : "連接 Strava";
       setConnectMeta();
       persistState();
+    });
+  }
+
+  const annualVolumeInput = document.getElementById("annualVolumeInput");
+  const annualVolumeApplyBtn = document.getElementById("annualVolumeApplyBtn");
+  const annualVolumeClearBtn = document.getElementById("annualVolumeClearBtn");
+  if (annualVolumeInput) {
+    annualVolumeInput.value = Number.isFinite(state.ytdVolumeHrs) && state.ytdVolumeHrs > 0 ? String(state.ytdVolumeHrs) : "";
+    annualVolumeInput.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      annualVolumeApplyBtn?.click();
+    });
+  }
+  if (annualVolumeApplyBtn && annualVolumeInput) {
+    annualVolumeApplyBtn.addEventListener("click", () => {
+      const raw = String(annualVolumeInput.value || "").trim();
+      const v = Number(raw);
+      if (!Number.isFinite(v) || v <= 0) {
+        showToast("請輸入有效的年總訓練量（小時）", { variant: "warn", durationMs: 1800 });
+        return;
+      }
+      pushHistory();
+      applyAnnualVolumeToWeeks(v);
+      persistState();
+      updateHeader();
+      renderCalendar();
+      renderCharts();
+      renderWeekDetails();
+      showToast("已套用年總訓練量分配");
+    });
+  }
+  if (annualVolumeClearBtn && annualVolumeInput) {
+    annualVolumeClearBtn.addEventListener("click", () => {
+      pushHistory();
+      state.ytdVolumeHrs = null;
+      annualVolumeInput.value = "";
+      persistState();
+      updateHeader();
+      renderCalendar();
+      renderCharts();
+      renderWeekDetails();
+      showToast("已清除年總訓練量設定");
     });
   }
 
