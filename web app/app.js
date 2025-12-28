@@ -1122,13 +1122,10 @@ function sessionPlanForDay(weekIndex, day, ctx) {
     const idx = phaseStreakIndex(weekIndex, phase);
     const repMin = clamp(6 + Math.floor(idx / 2) * 2, 6, 12);
     const restMin = Math.max(1, Math.round(repMin / 4));
-    const extraTarget = idx >= 3 ? clamp(10 + (idx - 3) * 5, 10, 20) : 0;
     const sets = clamp(3 + Math.floor(idx / 2), 3, 5);
-    const extra = extraTarget;
     const details = [`主課：${sets} × ${repMin}'（跑/休 4:1，休 ${restMin}'）`];
-    if (extra >= 10) details.push(`進階：完成兩組後，再進行 ${Math.round(extra)}' 乳酸跑`);
     details.push("另加：熱身／放鬆");
-    const workoutMinutes = Math.max(0, Math.round(sets * repMin + extra));
+    const workoutMinutes = Math.max(0, Math.round(sets * repMin));
     return {
       zone: 4,
       rpe: rpeOverride ?? 8,
@@ -1255,8 +1252,7 @@ function qualityWorkoutMinutesForPhase(weekIndex, phase) {
   if (p === "Threshold") {
     const repMin = clamp(6 + Math.floor(idx / 2) * 2, 6, 12);
     const sets = clamp(3 + Math.floor(idx / 2), 3, 5);
-    const extra = idx >= 3 ? clamp(10 + (idx - 3) * 5, 10, 20) : 0;
-    return Math.max(0, Math.round(sets * repMin + extra));
+    return Math.max(0, Math.round(sets * repMin));
   }
   if (p === "VO2Max") {
     return clamp(5 + idx * 2, 5, 15);
