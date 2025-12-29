@@ -391,6 +391,188 @@ const BLOCK_LABELS_ZH = {
   Transition: "過渡",
 };
 
+function computeCoachBlockByRules() {
+  const out = new Array(52).fill("");
+  const rank = { "": 0, Base: 0, Deload: 0, Build: 1, Transition: 2, Peak: 3 };
+
+  const setBlock = (idx, block) => {
+    if (!Number.isFinite(idx) || idx < 0 || idx > 51) return;
+    const next = normalizeBlockValue(block || "");
+    if (!Object.prototype.hasOwnProperty.call(BLOCK_LABELS_ZH, next)) return;
+    const cur = out[idx] || "";
+    if ((rank[next] || 0) >= (rank[cur] || 0)) out[idx] = next;
+  };
+
+  state.weeks.forEach((w) => {
+    if (!w) return;
+    const p = String(w.priority || "").trim().toUpperCase();
+    if (p !== "A" && p !== "B") return;
+    if (!Array.isArray(w.races) || w.races.length === 0) return;
+    const idx = clamp(Number(w.index), 0, 51);
+
+    if (p === "A") {
+      setBlock(idx, "Peak");
+      setBlock(idx - 1, "Peak");
+      setBlock(idx + 1, "Transition");
+      for (let d = 2; d <= 4; d++) setBlock(idx - d, "Build");
+      return;
+    }
+
+    setBlock(idx, "Peak");
+    for (let d = 1; d <= 3; d++) setBlock(idx - d, "Build");
+  });
+
+  let baseCount = 0;
+  for (let i = 0; i < 52; i++) {
+    if (out[i]) {
+      baseCount = 0;
+      continue;
+    }
+    if (baseCount < 3) {
+      out[i] = "Base";
+      baseCount++;
+    } else {
+      out[i] = "Deload";
+      baseCount = 0;
+    }
+  }
+
+  return out;
+}
+
+function applyCoachBlockRules() {
+  if (!state || !Array.isArray(state.weeks) || state.weeks.length !== 52) return false;
+  const blocks = computeCoachBlockByRules();
+  let changed = false;
+  for (let i = 0; i < 52; i++) {
+    const w = state.weeks[i];
+    if (!w) continue;
+    const next = blocks[i] || "Base";
+    if (normalizeBlockValue(w.block || "") !== next) {
+      w.block = next;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function phasesForRaceDistance(distanceKm, kind) {
+  const d = Number(distanceKm);
+  const k = String(kind || "").trim();
+  if (!Number.isFinite(d) || d <= 0) return ["Tempo", "Threshold"];
+  if (k === "trail") {
+    if (d <= 12) return ["Threshold", "VO2Max"];
+    if (d <= 25) return ["Aerobic Endurance", "Threshold"];
+    if (d <= 45) return ["Aerobic Endurance", "Tempo"];
+    return ["Aerobic Endurance", "Tempo"];
+  }
+  if (d <= 5) return ["VO2Max", "Anaerobic"];
+  if (d <= 12) return ["Threshold", "VO2Max"];
+  if (d <= 25) return ["Tempo", "Threshold"];
+  return ["Aerobic Endurance", "Tempo"];
+}
+
+function intensityRelevanceForRace(distanceKm, kind) {
+  const d = Number(distanceKm);
+  const k = String(kind || "").trim();
+  if (!Number.isFinite(d) || d <= 0) return ["Tempo", "Threshold", "VO2Max", "Anaerobic"];
+  if (k === "trail") {
+    if (d <= 12) return ["Threshold", "VO2Max", "Tempo", "Anaerobic"];
+    if (d <= 25) return ["Threshold", "Tempo", "VO2Max", "Anaerobic"];
+    return ["Tempo", "Threshold", "VO2Max", "Anaerobic"];
+  }
+  if (d <= 5) return ["VO2Max", "Anaerobic", "Threshold", "Tempo"];
+  if (d <= 12) return ["Threshold", "VO2Max", "Tempo", "Anaerobic"];
+  if (d <= 25) return ["Tempo", "Threshold", "VO2Max", "Anaerobic"];
+  return ["Tempo", "Threshold", "VO2Max", "Anaerobic"];
+}
+
+function computeCoachPhasesByRules() {
+  const out = new Array(52).fill(null).map(() => []);
+
+  const nextTargetRaceByWeek = new Array(52).fill(null);
+  const nextTargetRaceWeekIndex = new Array(52).fill(null);
+  for (let i = 0; i < 52; i++) {
+    for (let j = i; j < 52; j++) {
+      const w = state.weeks[j];
+      if (!w) continue;
+      const pr = String(w.priority || "").trim().toUpperCase();
+      if (pr !== "A" && pr !== "B") continue;
+      const races = Array.isArray(w.races) ? w.races : [];
+      const candidates = races
+        .map((r) => {
+          const date = String(r?.date || "").trim();
+          const dist = Number(r?.distanceKm);
+          const distanceKm = Number.isFinite(dist) && dist > 0 ? dist : null;
+          const kind = typeof r?.kind === "string" ? r.kind : "";
+          return { date, distanceKm, kind };
+        })
+        .filter((r) => r.date && r.distanceKm);
+      if (!candidates.length) continue;
+      candidates.sort((a, b) => a.date.localeCompare(b.date));
+      nextTargetRaceByWeek[i] = candidates[0];
+      nextTargetRaceWeekIndex[i] = j;
+      break;
+    }
+  }
+
+  for (let i = 0; i < 52; i++) {
+    const w = state.weeks[i];
+    const block = normalizeBlockValue(w?.block || "");
+    if (block === "Base") {
+      const race = nextTargetRaceByWeek[i];
+      const raceWeekIdx = nextTargetRaceWeekIndex[i];
+      const buildPhases = normalizePhases(phasesForRaceDistance(race?.distanceKm, race?.kind));
+      const relevance = intensityRelevanceForRace(race?.distanceKm, race?.kind);
+      const candidates = relevance.filter((p) => !buildPhases.includes(p));
+      const weeksToRace = Number.isFinite(raceWeekIdx) ? Math.max(0, raceWeekIdx - i) : null;
+      const pickIdx = Number.isFinite(weeksToRace) ? clamp(Math.floor(weeksToRace / 4), 0, candidates.length - 1) : 0;
+      const extra = candidates[pickIdx] || candidates[0] || "";
+      out[i] = extra ? ["Aerobic Endurance", extra] : ["Aerobic Endurance"];
+      continue;
+    }
+    if (block === "Deload") {
+      out[i] = ["Deload"];
+      continue;
+    }
+    if (block === "Peak") {
+      out[i] = ["Peaking"];
+      continue;
+    }
+    if (block === "Build") {
+      const race = nextTargetRaceByWeek[i];
+      out[i] = phasesForRaceDistance(race?.distanceKm, race?.kind);
+      continue;
+    }
+    out[i] = [];
+  }
+
+  return out.map((p) => normalizePhases(p));
+}
+
+function applyCoachPhaseRules() {
+  if (!state || !Array.isArray(state.weeks) || state.weeks.length !== 52) return false;
+  const phases = computeCoachPhasesByRules();
+  let changed = false;
+  for (let i = 0; i < 52; i++) {
+    const w = state.weeks[i];
+    if (!w) continue;
+    const cur = normalizePhases(w.phases);
+    const next = normalizePhases(phases[i]);
+    if (cur.length !== next.length || cur.some((x, idx) => x !== next[idx])) {
+      w.phases = next;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function applyCoachAutoRules() {
+  const a = applyCoachBlockRules();
+  const b = applyCoachPhaseRules();
+  return a || b;
+}
+
 function plannedMinutesForWeek(week) {
   const v = Number(week?.volumeHrs);
   if (!Number.isFinite(v) || v <= 0) return 0;
@@ -2369,6 +2551,7 @@ function renderCalendar() {
         select.addEventListener("change", () => {
           pushHistory();
           w.block = select.value;
+          applyCoachPhaseRules();
           persistState();
           updateHeader();
           renderCalendar();
@@ -3109,6 +3292,8 @@ function reassignAllRacesByDate() {
   state.weeks.forEach((w) => {
     if (!Array.isArray(w.races) || w.races.length === 0) w.priority = "";
   });
+
+  applyCoachAutoRules();
 }
 
 function openRaceInputModal() {
@@ -3164,6 +3349,7 @@ function openRaceInputModal() {
         if (w && (!Array.isArray(w.races) || w.races.length === 0)) {
           w.priority = "";
         }
+        applyCoachAutoRules();
         persistState();
         renderList();
         renderCalendar();
@@ -3273,6 +3459,7 @@ function openRaceInputModal() {
     kind.value = "";
     priority.value = "";
     w.priority = racePriority;
+    applyCoachAutoRules();
     persistState();
     renderList();
     renderCalendar();
