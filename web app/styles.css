@@ -397,11 +397,11 @@ body {
   color: #ffffff !important;
 }
 
-.calCell.calCell--acwrAlert {
+.calRow[data-row-key="acwr"] .calCell.calCell--acwrAlert {
   background: #ef4444;
 }
 
-.calCell--acwrAlert .fitText {
+.calRow[data-row-key="acwr"] .calCell--acwrAlert .fitText {
   color: #000000 !important;
 }
 
