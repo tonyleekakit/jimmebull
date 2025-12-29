@@ -229,6 +229,14 @@ body {
   width: 160px;
 }
 
+.annualVolumeField--small .input {
+  width: 120px;
+}
+
+.annualVolumeField--tiny .input {
+  width: 110px;
+}
+
 .calendarSummary {
   margin: 0 0 10px;
   border: 1px solid var(--border);

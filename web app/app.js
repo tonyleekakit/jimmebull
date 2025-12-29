@@ -2318,6 +2318,14 @@ function persistState() {
     const payload = {
       startDate: formatYMD(state.startDate),
       ytdVolumeHrs: Number.isFinite(state.ytdVolumeHrs) ? state.ytdVolumeHrs : null,
+      annualVolumeSettings:
+        state?.annualVolumeSettings && typeof state.annualVolumeSettings === "object"
+          ? {
+              startWeeklyHrs: Number.isFinite(Number(state.annualVolumeSettings.startWeeklyHrs)) ? Number(state.annualVolumeSettings.startWeeklyHrs) : null,
+              maxUpPct: Number.isFinite(Number(state.annualVolumeSettings.maxUpPct)) ? Number(state.annualVolumeSettings.maxUpPct) : 12,
+              maxDownPct: Number.isFinite(Number(state.annualVolumeSettings.maxDownPct)) ? Number(state.annualVolumeSettings.maxDownPct) : 25,
+            }
+          : { startWeeklyHrs: null, maxUpPct: 12, maxDownPct: 25 },
       weeks: state.weeks.map((w) => ({
         races: Array.isArray(w.races) ? w.races : [],
         priority: w.priority || "",
@@ -2351,6 +2359,7 @@ const state = {
   connected: false,
   startDate: startOfMonday(new Date("2025-03-03T00:00:00")),
   ytdVolumeHrs: null,
+  annualVolumeSettings: { startWeeklyHrs: null, maxUpPct: 12, maxDownPct: 25 },
   weeks: [],
   selectedWeekIndex: 0,
 };
@@ -2376,6 +2385,14 @@ function snapshotForHistory() {
   return {
     startDate: formatYMD(state.startDate),
     ytdVolumeHrs: Number.isFinite(state.ytdVolumeHrs) ? state.ytdVolumeHrs : null,
+    annualVolumeSettings:
+      state?.annualVolumeSettings && typeof state.annualVolumeSettings === "object"
+        ? {
+            startWeeklyHrs: Number.isFinite(Number(state.annualVolumeSettings.startWeeklyHrs)) ? Number(state.annualVolumeSettings.startWeeklyHrs) : null,
+            maxUpPct: Number.isFinite(Number(state.annualVolumeSettings.maxUpPct)) ? Number(state.annualVolumeSettings.maxUpPct) : 12,
+            maxDownPct: Number.isFinite(Number(state.annualVolumeSettings.maxDownPct)) ? Number(state.annualVolumeSettings.maxDownPct) : 25,
+          }
+        : { startWeeklyHrs: null, maxUpPct: 12, maxDownPct: 25 },
     selectedWeekIndex: state.selectedWeekIndex,
     weeks: state.weeks.map((w) => ({
       races: Array.isArray(w.races)
@@ -2418,6 +2435,14 @@ function applyHistorySnapshot(snapshot) {
   }
 
   state.ytdVolumeHrs = Number.isFinite(snapshot.ytdVolumeHrs) ? snapshot.ytdVolumeHrs : null;
+  state.annualVolumeSettings =
+    snapshot?.annualVolumeSettings && typeof snapshot.annualVolumeSettings === "object"
+      ? {
+          startWeeklyHrs: Number.isFinite(Number(snapshot.annualVolumeSettings.startWeeklyHrs)) ? Number(snapshot.annualVolumeSettings.startWeeklyHrs) : null,
+          maxUpPct: Number.isFinite(Number(snapshot.annualVolumeSettings.maxUpPct)) ? Number(snapshot.annualVolumeSettings.maxUpPct) : 12,
+          maxDownPct: Number.isFinite(Number(snapshot.annualVolumeSettings.maxDownPct)) ? Number(snapshot.annualVolumeSettings.maxDownPct) : 25,
+        }
+      : { startWeeklyHrs: null, maxUpPct: 12, maxDownPct: 25 };
   snapshot.weeks.forEach((p, idx) => {
     const w = state.weeks[idx];
     if (!w) return;
@@ -2468,6 +2493,7 @@ function pushHistory() {
 function applyAfterHistoryRestore() {
   recomputeFormulaVolumes();
   persistState();
+  syncAnnualVolumeInputs();
   updateHeader();
   renderCalendar();
   renderWeekPicker();
@@ -2566,29 +2592,136 @@ function applyAnnualVolumeToWeeks(annualVolumeHrs) {
 
   const sumWeights = weights.reduce((a, b) => a + b, 0);
   if (!Number.isFinite(sumWeights) || sumWeights <= 0) return false;
-  const scaled = weights.map((v) => (v * targetTotal) / sumWeights);
+  const base = weights.map((v) => (v * targetTotal) / sumWeights);
+
+  const settings = state?.annualVolumeSettings && typeof state.annualVolumeSettings === "object" ? state.annualVolumeSettings : {};
+  const startWeeklyHrs = (() => {
+    const v = Number(settings.startWeeklyHrs);
+    if (!Number.isFinite(v) || v <= 0) return null;
+    return Math.round(v * 10) / 10;
+  })();
+  const maxUpPct = (() => {
+    const v = Number(settings.maxUpPct);
+    return Number.isFinite(v) ? clamp(v, 0, 50) : 12;
+  })();
+  const maxDownPct = (() => {
+    const v = Number(settings.maxDownPct);
+    return Number.isFinite(v) ? clamp(v, 0, 80) : 25;
+  })();
+
+  const maxUpRate = maxUpPct / 100;
+  const maxDownRate = maxDownPct / 100;
+
+  const clampForward = (arr) => {
+    for (let i = 1; i < arr.length; i++) {
+      const prev = Math.max(0, Number(arr[i - 1]) || 0);
+      const up = prev * (1 + maxUpRate);
+      const down = prev * (1 - maxDownRate);
+      arr[i] = clamp(Math.max(0, Number(arr[i]) || 0), down, up);
+    }
+  };
+  const clampBackward = (arr, fixedStart) => {
+    for (let i = arr.length - 2; i >= 0; i--) {
+      if (fixedStart && i === 0) continue;
+      const next = Math.max(0, Number(arr[i + 1]) || 0);
+      const minPrev = next / (1 + maxUpRate);
+      const maxPrev = maxDownRate >= 1 ? Number.POSITIVE_INFINITY : next / (1 - maxDownRate);
+      arr[i] = clamp(Math.max(0, Number(arr[i]) || 0), minPrev, maxPrev);
+    }
+  };
+
+  const applyRamp = (arr, startHrs) => {
+    if (!startHrs) return;
+    const endIdx = clamp(3, 0, 51);
+    const endTarget = Number.isFinite(Number(base[endIdx])) ? Number(base[endIdx]) : weeklyAvg;
+    arr[0] = startHrs;
+    const denom = endIdx || 1;
+    for (let i = 1; i <= endIdx; i++) {
+      const t = i / denom;
+      arr[i] = startHrs + (endTarget - startHrs) * t;
+    }
+  };
+
+  const distributeDiff = (arr, diff, fixedStart) => {
+    if (!Number.isFinite(diff) || Math.abs(diff) < 1e-9) return;
+    const startIndex = fixedStart ? 1 : 0;
+    const subWeights = weights.map((w, i) => (i < startIndex ? 0 : w));
+    const sum = subWeights.reduce((a, b) => a + b, 0);
+    if (!Number.isFinite(sum) || sum <= 0) return;
+    for (let i = startIndex; i < arr.length; i++) {
+      arr[i] = Math.max(0, (Number(arr[i]) || 0) + (subWeights[i] / sum) * diff);
+    }
+  };
+
+  const plan = base.slice();
+  const fixedStart = Boolean(startWeeklyHrs);
+  applyRamp(plan, startWeeklyHrs);
+
+  for (let iter = 0; iter < 40; iter++) {
+    if (fixedStart) plan[0] = startWeeklyHrs;
+    clampForward(plan);
+    clampBackward(plan, fixedStart);
+    if (fixedStart) plan[0] = startWeeklyHrs;
+
+    const sumPlan = plan.reduce((a, b) => a + (Number(b) || 0), 0);
+    const diff = targetTotal - sumPlan;
+    if (Math.abs(diff) < 0.02) break;
+    distributeDiff(plan, diff, fixedStart);
+  }
+
+  if (fixedStart) {
+    plan[0] = startWeeklyHrs;
+    const remaining = Math.max(0, targetTotal - startWeeklyHrs);
+    const restSum = plan.slice(1).reduce((a, b) => a + (Number(b) || 0), 0);
+    if (restSum > 0) {
+      const s = remaining / restSum;
+      for (let i = 1; i < plan.length; i++) plan[i] = Math.max(0, (Number(plan[i]) || 0) * s);
+      clampForward(plan);
+      clampBackward(plan, true);
+      plan[0] = startWeeklyHrs;
+    }
+  }
 
   const targetTenths = Math.round(targetTotal * 10);
-  const rawTenths = scaled.map((v) => Math.max(0, Number(v) || 0) * 10);
+  let rawTenths = plan.map((v) => Math.max(0, Number(v) || 0) * 10);
   const outTenths = rawTenths.map((v) => Math.floor(v + 1e-9));
+  if (fixedStart) {
+    const fixedTenths = Math.round(startWeeklyHrs * 10);
+    rawTenths[0] = fixedTenths;
+    outTenths[0] = fixedTenths;
+  }
   let sumTenths = outTenths.reduce((a, b) => a + b, 0);
   let diffTenths = targetTenths - sumTenths;
 
   const order = rawTenths
     .map((v, i) => ({ i, frac: v - outTenths[i] }))
+    .filter((x) => !fixedStart || x.i !== 0)
     .sort((a, b) => b.frac - a.frac);
 
   if (diffTenths > 0) {
-    for (let k = 0; k < order.length && diffTenths > 0; k++) {
-      outTenths[order[k].i] += 1;
+    let k = 0;
+    while (diffTenths > 0 && order.length) {
+      outTenths[order[k % order.length].i] += 1;
       diffTenths -= 1;
+      k += 1;
+      if (k > 200000) break;
     }
   } else if (diffTenths < 0) {
     const rev = [...order].reverse();
-    for (let k = 0; k < rev.length && diffTenths < 0; k++) {
-      if (outTenths[rev[k].i] <= 0) continue;
-      outTenths[rev[k].i] -= 1;
-      diffTenths += 1;
+    let k = 0;
+    while (diffTenths < 0 && rev.length) {
+      const idx = rev[k % rev.length].i;
+      if (fixedStart && idx === 0) {
+        k += 1;
+        if (k > 200000) break;
+        continue;
+      }
+      if (outTenths[idx] > 0) {
+        outTenths[idx] -= 1;
+        diffTenths += 1;
+      }
+      k += 1;
+      if (k > 200000) break;
     }
   }
 
@@ -2610,6 +2743,29 @@ function applyYtdVolumeToWeeks(ytdVolumeHrs) {
 function applyAnnualVolumeRules() {
   if (!Number.isFinite(state.ytdVolumeHrs) || state.ytdVolumeHrs <= 0) return false;
   return applyAnnualVolumeToWeeks(state.ytdVolumeHrs);
+}
+
+function syncAnnualVolumeInputs() {
+  const annualVolumeInput = document.getElementById("annualVolumeInput");
+  const startWeeklyInput = document.getElementById("startWeeklyInput");
+  const maxUpPctInput = document.getElementById("maxUpPctInput");
+  const maxDownPctInput = document.getElementById("maxDownPctInput");
+
+  if (annualVolumeInput) {
+    annualVolumeInput.value = Number.isFinite(state.ytdVolumeHrs) && state.ytdVolumeHrs > 0 ? String(state.ytdVolumeHrs) : "";
+  }
+  if (startWeeklyInput) {
+    const v = Number(state?.annualVolumeSettings?.startWeeklyHrs);
+    startWeeklyInput.value = Number.isFinite(v) && v > 0 ? String(v) : "";
+  }
+  if (maxUpPctInput) {
+    const v = Number(state?.annualVolumeSettings?.maxUpPct);
+    maxUpPctInput.value = Number.isFinite(v) ? String(v) : "12";
+  }
+  if (maxDownPctInput) {
+    const v = Number(state?.annualVolumeSettings?.maxDownPct);
+    maxDownPctInput.value = Number.isFinite(v) ? String(v) : "25";
+  }
 }
 
 function updateHeader() {
@@ -3967,11 +4123,41 @@ function wireButtons() {
   }
 
   const annualVolumeInput = document.getElementById("annualVolumeInput");
+  const startWeeklyInput = document.getElementById("startWeeklyInput");
+  const maxUpPctInput = document.getElementById("maxUpPctInput");
+  const maxDownPctInput = document.getElementById("maxDownPctInput");
   const annualVolumeApplyBtn = document.getElementById("annualVolumeApplyBtn");
   const annualVolumeClearBtn = document.getElementById("annualVolumeClearBtn");
   if (annualVolumeInput) {
     annualVolumeInput.value = Number.isFinite(state.ytdVolumeHrs) && state.ytdVolumeHrs > 0 ? String(state.ytdVolumeHrs) : "";
     annualVolumeInput.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      annualVolumeApplyBtn?.click();
+    });
+  }
+  if (startWeeklyInput) {
+    const v = Number(state?.annualVolumeSettings?.startWeeklyHrs);
+    startWeeklyInput.value = Number.isFinite(v) && v > 0 ? String(v) : "";
+    startWeeklyInput.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      annualVolumeApplyBtn?.click();
+    });
+  }
+  if (maxUpPctInput) {
+    const v = Number(state?.annualVolumeSettings?.maxUpPct);
+    maxUpPctInput.value = Number.isFinite(v) ? String(v) : "12";
+    maxUpPctInput.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      annualVolumeApplyBtn?.click();
+    });
+  }
+  if (maxDownPctInput) {
+    const v = Number(state?.annualVolumeSettings?.maxDownPct);
+    maxDownPctInput.value = Number.isFinite(v) ? String(v) : "25";
+    maxDownPctInput.addEventListener("keydown", (e) => {
       if (e.key !== "Enter") return;
       e.preventDefault();
       annualVolumeApplyBtn?.click();
@@ -3985,7 +4171,36 @@ function wireButtons() {
         showToast("請輸入有效的年總訓練量（小時）", { variant: "warn", durationMs: 1800 });
         return;
       }
+      const startWeeklyHrsRaw = startWeeklyInput ? String(startWeeklyInput.value || "").trim() : "";
+      const startWeeklyHrs = startWeeklyHrsRaw ? Number(startWeeklyHrsRaw) : null;
+      if (startWeeklyHrsRaw && (!Number.isFinite(startWeeklyHrs) || startWeeklyHrs <= 0)) {
+        showToast("請輸入有效的起始週量（小時）", { variant: "warn", durationMs: 1800 });
+        return;
+      }
+      if (startWeeklyHrsRaw && Number.isFinite(startWeeklyHrs) && startWeeklyHrs > v) {
+        showToast("起始週量不能大於年總訓練量", { variant: "warn", durationMs: 1800 });
+        return;
+      }
+
+      const maxUpPctRaw = maxUpPctInput ? String(maxUpPctInput.value || "").trim() : "";
+      const maxDownPctRaw = maxDownPctInput ? String(maxDownPctInput.value || "").trim() : "";
+      const maxUpPct = maxUpPctRaw ? Number(maxUpPctRaw) : 12;
+      const maxDownPct = maxDownPctRaw ? Number(maxDownPctRaw) : 25;
+      if (!Number.isFinite(maxUpPct) || maxUpPct < 0 || maxUpPct > 50) {
+        showToast("每週最大增幅（%）請輸入 0 - 50", { variant: "warn", durationMs: 1800 });
+        return;
+      }
+      if (!Number.isFinite(maxDownPct) || maxDownPct < 0 || maxDownPct > 80) {
+        showToast("每週最大降幅（%）請輸入 0 - 80", { variant: "warn", durationMs: 1800 });
+        return;
+      }
+
       pushHistory();
+      state.annualVolumeSettings = {
+        startWeeklyHrs: startWeeklyHrs && Number.isFinite(startWeeklyHrs) ? Math.round(startWeeklyHrs * 10) / 10 : null,
+        maxUpPct,
+        maxDownPct,
+      };
       applyAnnualVolumeToWeeks(v);
       applyCoachDayPlanRules({ start: 0, end: 51 });
       persistState();
@@ -4000,7 +4215,11 @@ function wireButtons() {
     annualVolumeClearBtn.addEventListener("click", () => {
       pushHistory();
       state.ytdVolumeHrs = null;
+      state.annualVolumeSettings = { startWeeklyHrs: null, maxUpPct: 12, maxDownPct: 25 };
       annualVolumeInput.value = "";
+      if (startWeeklyInput) startWeeklyInput.value = "";
+      if (maxUpPctInput) maxUpPctInput.value = "12";
+      if (maxDownPctInput) maxDownPctInput.value = "25";
       persistState();
       updateHeader();
       renderCalendar();
@@ -4038,6 +4257,7 @@ function wireButtons() {
     const connected = state.connected;
     buildInitialWeeks();
     state.ytdVolumeHrs = null;
+    state.annualVolumeSettings = { startWeeklyHrs: null, maxUpPct: 12, maxDownPct: 25 };
     state.connected = connected;
     state.selectedWeekIndex = 0;
     persistState();
@@ -4105,6 +4325,14 @@ function init() {
     state.startDate = startOfMonday(persistedStartDate);
   }
   state.ytdVolumeHrs = Number.isFinite(persisted?.ytdVolumeHrs) ? persisted.ytdVolumeHrs : null;
+  state.annualVolumeSettings =
+    persisted?.annualVolumeSettings && typeof persisted.annualVolumeSettings === "object"
+      ? {
+          startWeeklyHrs: Number.isFinite(Number(persisted.annualVolumeSettings.startWeeklyHrs)) ? Number(persisted.annualVolumeSettings.startWeeklyHrs) : null,
+          maxUpPct: Number.isFinite(Number(persisted.annualVolumeSettings.maxUpPct)) ? Number(persisted.annualVolumeSettings.maxUpPct) : 12,
+          maxDownPct: Number.isFinite(Number(persisted.annualVolumeSettings.maxDownPct)) ? Number(persisted.annualVolumeSettings.maxDownPct) : 25,
+        }
+      : { startWeeklyHrs: null, maxUpPct: 12, maxDownPct: 25 };
   buildInitialWeeks();
   if (persisted?.weeks?.length === 52) {
     const seasonOptions = ["", "Base", "Build", "Peak", "Deload", "Transition"];
