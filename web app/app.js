@@ -112,6 +112,7 @@ const PACE_TEST_OPTIONS = [
 ];
 
 const ACTIVE_TAB_KEY = "activeTab";
+const HOWTO_SHOT_PREFIX = "howtoShot_v1:";
 
 function parseHmsToSeconds(raw) {
   if (typeof raw !== "string") return null;
@@ -356,6 +357,29 @@ function resetPaceCalculator() {
   if (meta) meta.textContent = "";
   if (zonesRoot) zonesRoot.replaceChildren();
   if (predsRoot) predsRoot.replaceChildren();
+}
+
+function wireHowTo() {
+  const readShot = (key) => {
+    try {
+      return String(localStorage.getItem(`${HOWTO_SHOT_PREFIX}${key}`) || "");
+    } catch {
+      return "";
+    }
+  };
+
+  const setShotUI = (wrap, dataUrl) => {
+    const img = wrap.querySelector(".howtoShot__img");
+    if (img) img.src = dataUrl || "";
+    wrap.classList.toggle("has-image", Boolean(dataUrl));
+  };
+
+  document.querySelectorAll("[data-howto-shot-key]").forEach((wrap) => {
+    const key = String(wrap.getAttribute("data-howto-shot-key") || "").trim();
+    if (!key) return;
+    const current = readShot(key);
+    setShotUI(wrap, current);
+  });
 }
 
 function startOfMonday(date) {
@@ -3896,6 +3920,7 @@ function init() {
   renderWeekDetails();
   renderCharts();
   wireTabs();
+  wireHowTo();
   wireButtons();
   let initialTab = getTabKeyFromHash();
   if (!initialTab) {
