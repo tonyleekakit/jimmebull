@@ -31,31 +31,9 @@
                 aria-label="年總訓練量（小時）"
               />
             </label>
-            <label class="annualVolumeField annualVolumeField--small" aria-label="起始週訓練量">
-              <span class="muted">起始週量（小時）</span>
-              <input
-                id="startWeeklyInput"
-                class="input"
-                type="number"
-                inputmode="decimal"
-                step="0.1"
-                min="0"
-                placeholder="例如 5.0"
-                aria-label="起始週訓練量（小時）"
-              />
-            </label>
-            <label class="annualVolumeField annualVolumeField--tiny" aria-label="每週最大增幅">
-              <span class="muted">每週最大增幅（%）</span>
-              <input id="maxUpPctInput" class="input" type="number" inputmode="numeric" step="1" min="0" max="50" placeholder="12" aria-label="每週最大增幅（%）" />
-            </label>
-            <label class="annualVolumeField annualVolumeField--tiny" aria-label="每週最大降幅">
-              <span class="muted">每週最大降幅（%）</span>
-              <input id="maxDownPctInput" class="input" type="number" inputmode="numeric" step="1" min="0" max="80" placeholder="25" aria-label="每週最大降幅（%）" />
-            </label>
             <button id="annualVolumeApplyBtn" class="btn" type="button">套用</button>
             <button id="annualVolumeClearBtn" class="btn" type="button">清除</button>
             <button id="raceInputBtn" class="btn btn--primary" type="button">輸入比賽</button>
-            <button id="aiPlanBtn" class="btn" type="button">AI 編排</button>
             <button id="exportPdfBtn" class="btn" type="button">匯出 PDF</button>
             <button id="resetBtn" class="btn" type="button">重設</button>
           </div>

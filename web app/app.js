@@ -391,232 +391,6 @@ const BLOCK_LABELS_ZH = {
   Transition: "過渡",
 };
 
-function computeCoachBlockByRules() {
-  const out = new Array(52).fill("");
-  const rank = { "": 0, Base: 0, Deload: 0, Build: 1, Transition: 2, Peak: 3 };
-
-  const setBlock = (idx, block) => {
-    if (!Number.isFinite(idx) || idx < 0 || idx > 51) return;
-    const next = normalizeBlockValue(block || "");
-    if (!Object.prototype.hasOwnProperty.call(BLOCK_LABELS_ZH, next)) return;
-    const cur = out[idx] || "";
-    if ((rank[next] || 0) >= (rank[cur] || 0)) out[idx] = next;
-  };
-
-  state.weeks.forEach((w) => {
-    if (!w) return;
-    const p = String(w.priority || "").trim().toUpperCase();
-    if (p !== "A" && p !== "B") return;
-    if (!Array.isArray(w.races) || w.races.length === 0) return;
-    const idx = clamp(Number(w.index), 0, 51);
-
-    if (p === "A") {
-      setBlock(idx, "Peak");
-      setBlock(idx - 1, "Peak");
-      setBlock(idx + 1, "Transition");
-      for (let d = 2; d <= 4; d++) setBlock(idx - d, "Build");
-      return;
-    }
-
-    setBlock(idx, "Peak");
-    for (let d = 1; d <= 3; d++) setBlock(idx - d, "Build");
-  });
-
-  let baseCount = 0;
-  for (let i = 0; i < 52; i++) {
-    if (out[i]) {
-      baseCount = 0;
-      continue;
-    }
-    if (baseCount < 3) {
-      out[i] = "Base";
-      baseCount++;
-    } else {
-      out[i] = "Deload";
-      baseCount = 0;
-    }
-  }
-
-  return out;
-}
-
-function applyCoachBlockRules() {
-  if (!state || !Array.isArray(state.weeks) || state.weeks.length !== 52) return false;
-  const blocks = computeCoachBlockByRules();
-  let changed = false;
-  for (let i = 0; i < 52; i++) {
-    const w = state.weeks[i];
-    if (!w) continue;
-    const next = blocks[i] || "Base";
-    if (normalizeBlockValue(w.block || "") !== next) {
-      w.block = next;
-      changed = true;
-    }
-  }
-  return changed;
-}
-
-function phasesForRaceDistance(distanceKm, kind) {
-  const d = Number(distanceKm);
-  const k = String(kind || "").trim();
-  if (!Number.isFinite(d) || d <= 0) return ["Tempo", "Threshold"];
-  if (k === "trail") {
-    if (d <= 12) return ["Threshold", "VO2Max"];
-    if (d <= 25) return ["Aerobic Endurance", "Threshold"];
-    if (d <= 45) return ["Aerobic Endurance", "Tempo"];
-    return ["Aerobic Endurance", "Tempo"];
-  }
-  if (d <= 5) return ["VO2Max", "Anaerobic"];
-  if (d <= 12) return ["Threshold", "VO2Max"];
-  if (d <= 25) return ["Tempo", "Threshold"];
-  return ["Aerobic Endurance", "Tempo"];
-}
-
-function intensityRelevanceForRace(distanceKm, kind) {
-  const d = Number(distanceKm);
-  const k = String(kind || "").trim();
-  if (!Number.isFinite(d) || d <= 0) return ["Tempo", "Threshold", "VO2Max", "Anaerobic"];
-  if (k === "trail") {
-    if (d <= 12) return ["Threshold", "VO2Max", "Tempo", "Anaerobic"];
-    if (d <= 25) return ["Threshold", "Tempo", "VO2Max", "Anaerobic"];
-    return ["Tempo", "Threshold", "VO2Max", "Anaerobic"];
-  }
-  if (d <= 5) return ["VO2Max", "Anaerobic", "Threshold", "Tempo"];
-  if (d <= 12) return ["Threshold", "VO2Max", "Tempo", "Anaerobic"];
-  if (d <= 25) return ["Tempo", "Threshold", "VO2Max", "Anaerobic"];
-  return ["Tempo", "Threshold", "VO2Max", "Anaerobic"];
-}
-
-function computeCoachPhasesByRules() {
-  const out = new Array(52).fill(null).map(() => []);
-
-  const nextTargetRaceByWeek = new Array(52).fill(null);
-  const nextTargetRaceWeekIndex = new Array(52).fill(null);
-  for (let i = 0; i < 52; i++) {
-    for (let j = i; j < 52; j++) {
-      const w = state.weeks[j];
-      if (!w) continue;
-      const pr = String(w.priority || "").trim().toUpperCase();
-      if (pr !== "A" && pr !== "B") continue;
-      const races = Array.isArray(w.races) ? w.races : [];
-      const candidates = races
-        .map((r) => {
-          const date = String(r?.date || "").trim();
-          const dist = Number(r?.distanceKm);
-          const distanceKm = Number.isFinite(dist) && dist > 0 ? dist : null;
-          const kind = typeof r?.kind === "string" ? r.kind : "";
-          return { date, distanceKm, kind };
-        })
-        .filter((r) => r.date && r.distanceKm);
-      if (!candidates.length) continue;
-      candidates.sort((a, b) => a.date.localeCompare(b.date));
-      nextTargetRaceByWeek[i] = candidates[0];
-      nextTargetRaceWeekIndex[i] = j;
-      break;
-    }
-  }
-
-  for (let i = 0; i < 52; i++) {
-    const w = state.weeks[i];
-    const block = normalizeBlockValue(w?.block || "");
-    if (block === "Base") {
-      const race = nextTargetRaceByWeek[i];
-      const raceWeekIdx = nextTargetRaceWeekIndex[i];
-      const buildPhases = normalizePhases(phasesForRaceDistance(race?.distanceKm, race?.kind));
-      const relevance = intensityRelevanceForRace(race?.distanceKm, race?.kind);
-      const candidates = relevance.filter((p) => !buildPhases.includes(p));
-      const weeksToRace = Number.isFinite(raceWeekIdx) ? Math.max(0, raceWeekIdx - i) : null;
-      const pickIdx = Number.isFinite(weeksToRace) ? clamp(Math.floor(weeksToRace / 4), 0, candidates.length - 1) : 0;
-      const extra = candidates[pickIdx] || candidates[0] || "";
-      out[i] = extra ? ["Aerobic Endurance", extra] : ["Aerobic Endurance"];
-      continue;
-    }
-    if (block === "Deload") {
-      out[i] = ["Deload"];
-      continue;
-    }
-    if (block === "Peak") {
-      out[i] = ["Peaking"];
-      continue;
-    }
-    if (block === "Build") {
-      const race = nextTargetRaceByWeek[i];
-      out[i] = phasesForRaceDistance(race?.distanceKm, race?.kind);
-      continue;
-    }
-    out[i] = [];
-  }
-
-  return out.map((p) => normalizePhases(p));
-}
-
-function applyCoachPhaseRules() {
-  if (!state || !Array.isArray(state.weeks) || state.weeks.length !== 52) return false;
-  const phases = computeCoachPhasesByRules();
-  let changed = false;
-  for (let i = 0; i < 52; i++) {
-    const w = state.weeks[i];
-    if (!w) continue;
-    const cur = normalizePhases(w.phases);
-    const next = normalizePhases(phases[i]);
-    if (cur.length !== next.length || cur.some((x, idx) => x !== next[idx])) {
-      w.phases = next;
-      changed = true;
-    }
-  }
-  return changed;
-}
-
-const AUTO_NOTE_START = "\u001F";
-const AUTO_NOTE_END = "\u001E";
-const LEGACY_AUTO_NOTE_START = "【自動課表】";
-const LEGACY_AUTO_NOTE_END = "【/自動課表】";
-
-function splitAutoNote(raw) {
-  const note = typeof raw === "string" ? raw : "";
-  const start = note.indexOf(AUTO_NOTE_START);
-  const end = note.indexOf(AUTO_NOTE_END);
-  if (start >= 0 && end >= 0 && end > start) {
-    const prefix = note.slice(0, start);
-    const auto = note.slice(start + AUTO_NOTE_START.length, end);
-    const suffix = note.slice(end + AUTO_NOTE_END.length);
-    return { has: true, legacy: false, prefix, auto, suffix };
-  }
-
-  const legacyStart = note.indexOf(LEGACY_AUTO_NOTE_START);
-  const legacyEnd = note.indexOf(LEGACY_AUTO_NOTE_END);
-  if (legacyStart < 0 || legacyEnd < 0 || legacyEnd < legacyStart) return { has: false, legacy: false, prefix: note, auto: "", suffix: "" };
-  const prefix = note.slice(0, legacyStart);
-  const auto = note.slice(legacyStart + LEGACY_AUTO_NOTE_START.length, legacyEnd);
-  const suffix = note.slice(legacyEnd + LEGACY_AUTO_NOTE_END.length);
-  return { has: true, legacy: true, prefix, auto, suffix };
-}
-
-function mergeAutoNote(raw, autoBody) {
-  const parts = splitAutoNote(raw);
-  const body = typeof autoBody === "string" ? autoBody.trim() : "";
-  const wrapped = body ? `${AUTO_NOTE_START}${body}${AUTO_NOTE_END}` : "";
-  if (!parts.has) {
-    const base = typeof raw === "string" ? raw.trimEnd() : "";
-    if (!wrapped) return base.trim();
-    return base ? `${base}\n\n${wrapped}` : wrapped;
-  }
-  const prefix = parts.prefix || "";
-  const suffix = parts.suffix || "";
-  if (!wrapped) {
-    const out = `${prefix.trimEnd()}${suffix.trimStart() ? `\n\n${suffix.trimStart()}` : ""}`;
-    return out.trim();
-  }
-  const out = `${prefix.trimEnd()}${prefix.trimEnd() ? "\n\n" : ""}${wrapped}${suffix.trimStart() ? `\n\n${suffix.trimStart()}` : ""}`;
-  return out.trimEnd();
-}
-
-function isAutoOnlyNote(raw) {
-  const p = splitAutoNote(raw);
-  if (!p.has) return false;
-  return `${p.prefix || ""}${p.suffix || ""}`.trim().length === 0;
-}
-
 function plannedMinutesForWeek(week) {
   const v = Number(week?.volumeHrs);
   if (!Number.isFinite(v) || v <= 0) return 0;
@@ -1502,74 +1276,6 @@ function computeWeekDayPlans(weekIndex) {
   return { block, targetMinutes, plans: constrained.plans, volumeHrsOverride: constrained.volumeHrsOverride };
 }
 
-function applyCoachDayPlanRules(range) {
-  if (!state || !Array.isArray(state.weeks) || state.weeks.length !== 52) return false;
-  const start = range && Number.isFinite(Number(range.start)) ? clamp(Number(range.start), 0, 51) : 0;
-  const end = range && Number.isFinite(Number(range.end)) ? clamp(Number(range.end), 0, 51) : 51;
-  let changed = false;
-
-  for (let i = start; i <= end; i++) {
-    const week = state.weeks[i];
-    if (!week) continue;
-    const result = computeWeekDayPlans(i);
-    if (!result) continue;
-
-    if (typeof result.volumeHrsOverride === "string" && result.volumeHrsOverride !== week.volumeHrs) {
-      week.volumeMode = "direct";
-      week.volumeFactor = 1;
-      week.volumeHrs = result.volumeHrsOverride;
-      changed = true;
-    }
-
-    const sessions = getWeekSessions(week);
-    if (!Array.isArray(week.sessions) || !week.sessions.length) week.sessions = sessions;
-
-    for (let d = 0; d < 7; d++) {
-      const s = sessions[d];
-      if (!s) continue;
-
-      const allowOverwrite = isAutoOnlyNote(s.note) || (getSessionTotals(s).minutes === 0 && String(s.note || "").trim() === "");
-      const plan = result.plans[d];
-      const isQuality = plan.type === "Quality";
-      const dayPlan = sessionPlanForDay(i, plan, { block: result.block });
-      const durationMinutes = Math.max(0, Math.round(Number(dayPlan?.workoutMinutes ?? plan.minutes) || 0));
-
-      if (allowOverwrite) {
-        s.workoutsCount = 1;
-        s.workouts = [{ duration: durationMinutes, rpe: dayPlan.rpe }];
-        s.zone = dayPlan.zone;
-        ensureSessionWorkouts(s);
-        const nextNote = mergeAutoNote(s.note, dayPlan.noteBody);
-        if (nextNote !== s.note) s.note = nextNote;
-        changed = true;
-      } else if (splitAutoNote(s.note).has) {
-        const body = dayPlan.noteBody;
-        const nextNote = mergeAutoNote(s.note, body);
-        if (nextNote !== s.note) {
-          s.note = nextNote;
-          changed = true;
-        }
-      } else if (!String(s.note || "").trim() && isQuality) {
-        const nextNote = mergeAutoNote("", dayPlan.noteBody);
-        if (nextNote !== s.note) {
-          s.note = nextNote;
-          changed = true;
-        }
-      }
-    }
-  }
-
-  return changed;
-}
-
-function applyCoachAutoRules() {
-  const a = applyCoachBlockRules();
-  const b = applyCoachPhaseRules();
-  const c = applyAnnualVolumeRules();
-  const d = applyCoachDayPlanRules();
-  return a || b || c || d;
-}
-
 const PHASE_LABELS_ZH = {
   "Aerobic Endurance": "有氧耐力",
   Tempo: "節奏",
@@ -2318,14 +2024,6 @@ function persistState() {
     const payload = {
       startDate: formatYMD(state.startDate),
       ytdVolumeHrs: Number.isFinite(state.ytdVolumeHrs) ? state.ytdVolumeHrs : null,
-      annualVolumeSettings:
-        state?.annualVolumeSettings && typeof state.annualVolumeSettings === "object"
-          ? {
-              startWeeklyHrs: Number.isFinite(Number(state.annualVolumeSettings.startWeeklyHrs)) ? Number(state.annualVolumeSettings.startWeeklyHrs) : null,
-              maxUpPct: Number.isFinite(Number(state.annualVolumeSettings.maxUpPct)) ? Number(state.annualVolumeSettings.maxUpPct) : 12,
-              maxDownPct: Number.isFinite(Number(state.annualVolumeSettings.maxDownPct)) ? Number(state.annualVolumeSettings.maxDownPct) : 25,
-            }
-          : { startWeeklyHrs: null, maxUpPct: 12, maxDownPct: 25 },
       weeks: state.weeks.map((w) => ({
         races: Array.isArray(w.races) ? w.races : [],
         priority: w.priority || "",
@@ -2359,7 +2057,6 @@ const state = {
   connected: false,
   startDate: startOfMonday(new Date("2025-03-03T00:00:00")),
   ytdVolumeHrs: null,
-  annualVolumeSettings: { startWeeklyHrs: null, maxUpPct: 12, maxDownPct: 25 },
   weeks: [],
   selectedWeekIndex: 0,
 };
@@ -2385,14 +2082,6 @@ function snapshotForHistory() {
   return {
     startDate: formatYMD(state.startDate),
     ytdVolumeHrs: Number.isFinite(state.ytdVolumeHrs) ? state.ytdVolumeHrs : null,
-    annualVolumeSettings:
-      state?.annualVolumeSettings && typeof state.annualVolumeSettings === "object"
-        ? {
-            startWeeklyHrs: Number.isFinite(Number(state.annualVolumeSettings.startWeeklyHrs)) ? Number(state.annualVolumeSettings.startWeeklyHrs) : null,
-            maxUpPct: Number.isFinite(Number(state.annualVolumeSettings.maxUpPct)) ? Number(state.annualVolumeSettings.maxUpPct) : 12,
-            maxDownPct: Number.isFinite(Number(state.annualVolumeSettings.maxDownPct)) ? Number(state.annualVolumeSettings.maxDownPct) : 25,
-          }
-        : { startWeeklyHrs: null, maxUpPct: 12, maxDownPct: 25 },
     selectedWeekIndex: state.selectedWeekIndex,
     weeks: state.weeks.map((w) => ({
       races: Array.isArray(w.races)
@@ -2435,14 +2124,6 @@ function applyHistorySnapshot(snapshot) {
   }
 
   state.ytdVolumeHrs = Number.isFinite(snapshot.ytdVolumeHrs) ? snapshot.ytdVolumeHrs : null;
-  state.annualVolumeSettings =
-    snapshot?.annualVolumeSettings && typeof snapshot.annualVolumeSettings === "object"
-      ? {
-          startWeeklyHrs: Number.isFinite(Number(snapshot.annualVolumeSettings.startWeeklyHrs)) ? Number(snapshot.annualVolumeSettings.startWeeklyHrs) : null,
-          maxUpPct: Number.isFinite(Number(snapshot.annualVolumeSettings.maxUpPct)) ? Number(snapshot.annualVolumeSettings.maxUpPct) : 12,
-          maxDownPct: Number.isFinite(Number(snapshot.annualVolumeSettings.maxDownPct)) ? Number(snapshot.annualVolumeSettings.maxDownPct) : 25,
-        }
-      : { startWeeklyHrs: null, maxUpPct: 12, maxDownPct: 25 };
   snapshot.weeks.forEach((p, idx) => {
     const w = state.weeks[idx];
     if (!w) return;
@@ -2551,220 +2232,11 @@ function generatePlan() {
   }
 }
 
-function applyAnnualVolumeToWeeks(annualVolumeHrs) {
-  if (!state || !Array.isArray(state.weeks) || state.weeks.length !== 52) return false;
-  const total = Number(annualVolumeHrs);
-  if (!Number.isFinite(total) || total <= 0) return false;
-  state.ytdVolumeHrs = total;
-  const targetTotal = Math.round(total * 10) / 10;
-  const before = state.weeks.map((w) => `${w?.volumeHrs ?? ""}|${w?.volumeMode ?? ""}|${w?.volumeFactor ?? ""}`).join(";");
-
-  const weeks = state.weeks;
-  const blocks = weeks.map((w) => normalizeBlockValue(w?.block || "") || "Base");
-  const hasRace = weeks.map((w) => Array.isArray(w?.races) && w.races.length > 0);
-  const isPreRaceWeek = hasRace.map((_, i) => i < 51 && hasRace[i + 1]);
-
-  const weeklyAvg = targetTotal / 52;
-  const volumeLevel = clamp((weeklyAvg - 3) / 10, 0, 1);
-  const lerp = (a, b, t) => a + (b - a) * clamp(t, 0, 1);
-
-  const factorSpecForWeek = (weekIndex) => {
-    const idx = clamp(Number(weekIndex) || 0, 0, 51);
-    const v = normalizeBlockValue(blocks[idx] || "") || "Base";
-
-    if (v === "Peak") {
-      if (hasRace[idx]) return { min: 0.6, max: 0.6, factor: 0.6 };
-      if (isPreRaceWeek[idx]) return { min: 0.8, max: 0.8, factor: 0.8 };
-      return { min: 0.8, max: 0.8, factor: 0.8 };
-    }
-    if (v === "Base") return { min: 1.1, max: 1.5, factor: lerp(1.1, 1.5, volumeLevel) };
-    if (v === "Deload") return { min: 0.75, max: 0.85, factor: lerp(0.75, 0.85, volumeLevel) };
-    if (v === "Build") return { min: 1.0, max: 1.1, factor: lerp(1.0, 1.1, volumeLevel) };
-    if (v === "Transition") return { min: 0.8, max: 1.1, factor: lerp(0.8, 1.1, volumeLevel) };
-    return { min: 1.0, max: 1.0, factor: 1.0 };
-  };
-
-  const weights = new Array(52).fill(0).map((_, i) => {
-    const spec = factorSpecForWeek(i);
-    const f = Number(spec?.factor);
-    return Math.max(0.01, Number.isFinite(f) ? f : 1);
-  });
-
-  const sumWeights = weights.reduce((a, b) => a + b, 0);
-  if (!Number.isFinite(sumWeights) || sumWeights <= 0) return false;
-  const base = weights.map((v) => (v * targetTotal) / sumWeights);
-
-  const settings = state?.annualVolumeSettings && typeof state.annualVolumeSettings === "object" ? state.annualVolumeSettings : {};
-  const startWeeklyHrs = (() => {
-    const v = Number(settings.startWeeklyHrs);
-    if (!Number.isFinite(v) || v <= 0) return null;
-    return Math.round(v * 10) / 10;
-  })();
-  const maxUpPct = (() => {
-    const v = Number(settings.maxUpPct);
-    return Number.isFinite(v) ? clamp(v, 0, 50) : 12;
-  })();
-  const maxDownPct = (() => {
-    const v = Number(settings.maxDownPct);
-    return Number.isFinite(v) ? clamp(v, 0, 80) : 25;
-  })();
-
-  const maxUpRate = maxUpPct / 100;
-  const maxDownRate = maxDownPct / 100;
-
-  const clampForward = (arr) => {
-    for (let i = 1; i < arr.length; i++) {
-      const prev = Math.max(0, Number(arr[i - 1]) || 0);
-      const up = prev * (1 + maxUpRate);
-      const down = prev * (1 - maxDownRate);
-      arr[i] = clamp(Math.max(0, Number(arr[i]) || 0), down, up);
-    }
-  };
-  const clampBackward = (arr, fixedStart) => {
-    for (let i = arr.length - 2; i >= 0; i--) {
-      if (fixedStart && i === 0) continue;
-      const next = Math.max(0, Number(arr[i + 1]) || 0);
-      const minPrev = next / (1 + maxUpRate);
-      const maxPrev = maxDownRate >= 1 ? Number.POSITIVE_INFINITY : next / (1 - maxDownRate);
-      arr[i] = clamp(Math.max(0, Number(arr[i]) || 0), minPrev, maxPrev);
-    }
-  };
-
-  const applyRamp = (arr, startHrs) => {
-    if (!startHrs) return;
-    const endIdx = clamp(3, 0, 51);
-    const endTarget = Number.isFinite(Number(base[endIdx])) ? Number(base[endIdx]) : weeklyAvg;
-    arr[0] = startHrs;
-    const denom = endIdx || 1;
-    for (let i = 1; i <= endIdx; i++) {
-      const t = i / denom;
-      arr[i] = startHrs + (endTarget - startHrs) * t;
-    }
-  };
-
-  const distributeDiff = (arr, diff, fixedStart) => {
-    if (!Number.isFinite(diff) || Math.abs(diff) < 1e-9) return;
-    const startIndex = fixedStart ? 1 : 0;
-    const subWeights = weights.map((w, i) => (i < startIndex ? 0 : w));
-    const sum = subWeights.reduce((a, b) => a + b, 0);
-    if (!Number.isFinite(sum) || sum <= 0) return;
-    for (let i = startIndex; i < arr.length; i++) {
-      arr[i] = Math.max(0, (Number(arr[i]) || 0) + (subWeights[i] / sum) * diff);
-    }
-  };
-
-  const plan = base.slice();
-  const fixedStart = Boolean(startWeeklyHrs);
-  applyRamp(plan, startWeeklyHrs);
-
-  for (let iter = 0; iter < 40; iter++) {
-    if (fixedStart) plan[0] = startWeeklyHrs;
-    clampForward(plan);
-    clampBackward(plan, fixedStart);
-    if (fixedStart) plan[0] = startWeeklyHrs;
-
-    const sumPlan = plan.reduce((a, b) => a + (Number(b) || 0), 0);
-    const diff = targetTotal - sumPlan;
-    if (Math.abs(diff) < 0.02) break;
-    distributeDiff(plan, diff, fixedStart);
-  }
-
-  if (fixedStart) {
-    plan[0] = startWeeklyHrs;
-    const remaining = Math.max(0, targetTotal - startWeeklyHrs);
-    const restSum = plan.slice(1).reduce((a, b) => a + (Number(b) || 0), 0);
-    if (restSum > 0) {
-      const s = remaining / restSum;
-      for (let i = 1; i < plan.length; i++) plan[i] = Math.max(0, (Number(plan[i]) || 0) * s);
-      clampForward(plan);
-      clampBackward(plan, true);
-      plan[0] = startWeeklyHrs;
-    }
-  }
-
-  const targetTenths = Math.round(targetTotal * 10);
-  let rawTenths = plan.map((v) => Math.max(0, Number(v) || 0) * 10);
-  const outTenths = rawTenths.map((v) => Math.floor(v + 1e-9));
-  if (fixedStart) {
-    const fixedTenths = Math.round(startWeeklyHrs * 10);
-    rawTenths[0] = fixedTenths;
-    outTenths[0] = fixedTenths;
-  }
-  let sumTenths = outTenths.reduce((a, b) => a + b, 0);
-  let diffTenths = targetTenths - sumTenths;
-
-  const order = rawTenths
-    .map((v, i) => ({ i, frac: v - outTenths[i] }))
-    .filter((x) => !fixedStart || x.i !== 0)
-    .sort((a, b) => b.frac - a.frac);
-
-  if (diffTenths > 0) {
-    let k = 0;
-    while (diffTenths > 0 && order.length) {
-      outTenths[order[k % order.length].i] += 1;
-      diffTenths -= 1;
-      k += 1;
-      if (k > 200000) break;
-    }
-  } else if (diffTenths < 0) {
-    const rev = [...order].reverse();
-    let k = 0;
-    while (diffTenths < 0 && rev.length) {
-      const idx = rev[k % rev.length].i;
-      if (fixedStart && idx === 0) {
-        k += 1;
-        if (k > 200000) break;
-        continue;
-      }
-      if (outTenths[idx] > 0) {
-        outTenths[idx] -= 1;
-        diffTenths += 1;
-      }
-      k += 1;
-      if (k > 200000) break;
-    }
-  }
-
-  weeks.forEach((w, i) => {
-    const v = (outTenths[i] || 0) / 10;
-    w.volumeHrs = v > 0 ? v.toFixed(1) : "";
-    w.volumeMode = "direct";
-    w.volumeFactor = 1;
-  });
-
-  const after = state.weeks.map((w) => `${w?.volumeHrs ?? ""}|${w?.volumeMode ?? ""}|${w?.volumeFactor ?? ""}`).join(";");
-  return before !== after;
-}
-
-function applyYtdVolumeToWeeks(ytdVolumeHrs) {
-  return applyAnnualVolumeToWeeks(ytdVolumeHrs);
-}
-
-function applyAnnualVolumeRules() {
-  if (!Number.isFinite(state.ytdVolumeHrs) || state.ytdVolumeHrs <= 0) return false;
-  return applyAnnualVolumeToWeeks(state.ytdVolumeHrs);
-}
-
 function syncAnnualVolumeInputs() {
   const annualVolumeInput = document.getElementById("annualVolumeInput");
-  const startWeeklyInput = document.getElementById("startWeeklyInput");
-  const maxUpPctInput = document.getElementById("maxUpPctInput");
-  const maxDownPctInput = document.getElementById("maxDownPctInput");
 
   if (annualVolumeInput) {
     annualVolumeInput.value = Number.isFinite(state.ytdVolumeHrs) && state.ytdVolumeHrs > 0 ? String(state.ytdVolumeHrs) : "";
-  }
-  if (startWeeklyInput) {
-    const v = Number(state?.annualVolumeSettings?.startWeeklyHrs);
-    startWeeklyInput.value = Number.isFinite(v) && v > 0 ? String(v) : "";
-  }
-  if (maxUpPctInput) {
-    const v = Number(state?.annualVolumeSettings?.maxUpPct);
-    maxUpPctInput.value = Number.isFinite(v) ? String(v) : "12";
-  }
-  if (maxDownPctInput) {
-    const v = Number(state?.annualVolumeSettings?.maxDownPct);
-    maxDownPctInput.value = Number.isFinite(v) ? String(v) : "25";
   }
 }
 
@@ -2897,16 +2369,11 @@ function renderCalendar() {
         select.addEventListener("change", () => {
           pushHistory();
           w.block = select.value;
-          applyCoachPhaseRules();
-          applyAnnualVolumeRules();
-          const sessionsChanged = applyCoachDayPlanRules({ start: i, end: i });
           persistState();
           updateHeader();
           renderCalendar();
-          if (sessionsChanged) {
-            renderCharts();
-            renderWeekDetails();
-          }
+          renderCharts();
+          renderWeekDetails();
         });
         wrap.appendChild(select);
         cell.appendChild(wrap);
@@ -2926,13 +2393,10 @@ function renderCalendar() {
         btn.addEventListener("click", () => {
           pushHistory();
           w.phases = selected ? phases.filter((p) => p !== row.phase) : [...phases, row.phase];
-          const sessionsChanged = applyCoachDayPlanRules({ start: i, end: i });
           persistState();
           renderCalendar();
-          if (sessionsChanged) {
-            renderCharts();
-            renderWeekDetails();
-          }
+          renderCharts();
+          renderWeekDetails();
         });
         cell.appendChild(btn);
       } else if (row.type === "races") {
@@ -3536,7 +3000,6 @@ function openPlannedVolumeModal(weekIndex) {
         wk.volumeHrs = next;
       }
       recomputeFormulaVolumes();
-      applyCoachDayPlanRules({ start, end });
     } else if (mode === "formula") {
       const rawFactor = String(factor.value || "").trim();
       const f = Number(rawFactor);
@@ -3561,8 +3024,6 @@ function openPlannedVolumeModal(weekIndex) {
         w.volumeFactor = f;
       }
       recomputeFormulaVolumes();
-      if (applyToOthers) applyCoachDayPlanRules({ start: 0, end: 51 });
-      else applyCoachDayPlanRules({ start: idx, end: idx });
     }
 
     persistState();
@@ -3648,245 +3109,6 @@ function reassignAllRacesByDate() {
   state.weeks.forEach((w) => {
     if (!Array.isArray(w.races) || w.races.length === 0) w.priority = "";
   });
-
-  applyCoachAutoRules();
-}
-
-function serializeStateForAiPlan() {
-  return {
-    startDate: formatYMD(state.startDate),
-    weeks: state.weeks.map((w) => ({
-      index: w.index,
-      weekNo: w.weekNo,
-      monday: formatYMD(w.monday),
-      priority: typeof w.priority === "string" ? w.priority : "",
-      races: Array.isArray(w.races)
-        ? w.races
-            .map((r) => ({
-              name: typeof r?.name === "string" ? r.name.trim() : "",
-              date: typeof r?.date === "string" ? r.date : "",
-              distanceKm: Number.isFinite(Number(r?.distanceKm)) && Number(r.distanceKm) > 0 ? Number(r.distanceKm) : null,
-              kind: typeof r?.kind === "string" ? r.kind : "",
-            }))
-            .filter((r) => r.name && r.date)
-        : [],
-      block: typeof w.block === "string" ? w.block : "",
-      phases: normalizePhases(w.phases),
-      volumeHrs: typeof w.volumeHrs === "string" ? w.volumeHrs : "",
-    })),
-  };
-}
-
-function applyAiPlanUpdates(updates) {
-  if (!updates || typeof updates !== "object") return false;
-  if (!Array.isArray(updates.weeks) || updates.weeks.length === 0) return false;
-
-  pushHistory();
-
-  updates.weeks.forEach((u) => {
-    const idx = clamp(Number(u?.index), 0, 51);
-    const w = state.weeks[idx];
-    if (!w) return;
-
-    const nextBlock = typeof u?.block === "string" ? normalizeBlockValue(u.block) : "";
-    if (nextBlock && Object.prototype.hasOwnProperty.call(BLOCK_LABELS_ZH, nextBlock)) {
-      w.block = nextBlock;
-    }
-
-    if (Array.isArray(u?.phases)) {
-      w.phases = normalizePhases(u.phases);
-    }
-
-    const volRaw = typeof u?.volumeHrs === "string" ? u.volumeHrs.trim() : "";
-    if (volRaw) {
-      const v = Number(volRaw);
-      if (Number.isFinite(v) && v > 0) {
-        w.volumeMode = "direct";
-        w.volumeFactor = 1;
-        w.volumeHrs = formatVolumeHrs(v);
-      }
-    }
-
-    if (Array.isArray(u?.sessions) && u.sessions.length) {
-      const sessions = getWeekSessions(w);
-      if (!Array.isArray(w.sessions) || !w.sessions.length) w.sessions = sessions;
-
-      u.sessions.forEach((su) => {
-        const dayIndex = clamp(Number(su?.dayIndex), 0, 6);
-        const s = sessions[dayIndex];
-        if (!s) return;
-
-        if (Number.isFinite(Number(su?.zone))) {
-          s.zone = clamp(Number(su.zone), 1, 6);
-        }
-
-        const durationMinutes = Math.max(0, Math.round(Number(su?.durationMinutes) || 0));
-        const rpe = clamp(Number(su?.rpe) || 1, 1, 10);
-
-        ensureSessionWorkouts(s);
-        s.note = "";
-        const count = clamp(Number(s.workoutsCount) || 1, 1, 10);
-        const base = count ? Math.floor(durationMinutes / count) : durationMinutes;
-        let rem = count ? durationMinutes - base * count : 0;
-
-        for (let k = 0; k < count; k++) {
-          const wk = Array.isArray(s.workouts) ? s.workouts[k] : null;
-          if (!wk) continue;
-          wk.duration = base + (rem > 0 ? 1 : 0);
-          if (rem > 0) rem--;
-          wk.rpe = rpe;
-        }
-        ensureSessionWorkouts(s);
-      });
-    }
-  });
-
-  applyCoachAutoRules();
-  recomputeFormulaVolumes();
-  persistState();
-  updateHeader();
-  renderCalendar();
-  renderCharts();
-  renderWeekDetails();
-  return true;
-}
-
-function openAiPlanModal() {
-  const overlay = el("div", "overlay");
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) overlay.remove();
-  });
-
-  const modal = el("div", "modal");
-  modal.classList.add("modal--scroll");
-  const title = el("div", "modal__title", "AI 助手 · 自動編排");
-  const subtitle = el("div", "modal__subtitle", "按比賽日期／優先級分週期、填訓練區與訓練量，並預填 Day 時長與 RPE");
-
-  const racesBox = el("div", "raceList");
-  const rows = [];
-  state.weeks.forEach((w) => {
-    const races = Array.isArray(w.races) ? w.races : [];
-    races.forEach((r) => {
-      const name = (r?.name || "").trim();
-      const date = (r?.date || "").trim();
-      if (!name || !date) return;
-      const dist = Number(r?.distanceKm);
-      const distText = Number.isFinite(dist) && dist > 0 ? `${dist}km` : "";
-      const kindRaw = String(r?.kind || "").trim();
-      const kindText = kindRaw === "trail" ? "越野跑" : kindRaw === "road" ? "路跑" : kindRaw;
-      rows.push({ weekNo: w.weekNo, date, name, priority: w.priority || "", distText, kindText });
-    });
-  });
-  rows.sort((a, b) => a.date.localeCompare(b.date) || a.weekNo - b.weekNo || a.name.localeCompare(b.name));
-  if (!rows.length) {
-    racesBox.appendChild(el("div", "muted", "未有比賽（請先按「輸入比賽」）"));
-  } else {
-    rows.forEach((r) => {
-      const row = el("div", "raceRow");
-      const meta = [r.distText, r.kindText].filter(Boolean).join(" · ");
-      const parts = [weekLabelZh(r.weekNo), r.date, r.name];
-      if (meta) parts.push(meta);
-      parts.push(r.priority || "—");
-      row.appendChild(el("div", "raceRow__name", parts.join(" · ")));
-      racesBox.appendChild(row);
-    });
-  }
-
-  const form = el("form", "paceForm");
-  const notes = document.createElement("textarea");
-  notes.className = "input";
-  notes.rows = 4;
-  notes.placeholder = "補充要求（可選）：例如每週跑 5 日、長課星期日、避免高強度連續兩日…";
-  form.appendChild(notes);
-
-  const actions = el("div", "modal__actions");
-  const cancel = el("button", "btn", "取消");
-  cancel.type = "button";
-  cancel.addEventListener("click", () => overlay.remove());
-  const submit = el("button", "btn btn--primary", "生成並套用");
-  submit.type = "submit";
-  actions.appendChild(cancel);
-  actions.appendChild(submit);
-
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    if (submit.disabled) return;
-    if (!rows.length) {
-      showToast("請先輸入最少一個比賽", { variant: "warn", durationMs: 1800 });
-      return;
-    }
-
-    submit.disabled = true;
-    const prevText = submit.textContent;
-    submit.textContent = "生成中…";
-
-    try {
-      const autoChanged = applyCoachAutoRules();
-      if (autoChanged) {
-        persistState();
-        renderCalendar();
-        renderCharts();
-      }
-
-      const resp = await fetch("/api/ai-plan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ state: serializeStateForAiPlan(), notes: notes.value || "" }),
-      });
-      let data = null;
-      let rawText = "";
-      const cloned = resp.clone();
-      try {
-        data = await resp.json();
-      } catch {
-        data = null;
-        rawText = await cloned.text().catch(() => "");
-      }
-      if (!resp.ok) {
-        const versionFromBody = typeof data?.serverVersion === "string" ? data.serverVersion.trim() : "";
-        const versionFromHeader = (resp.headers.get("X-Server-Version") || "").trim();
-        const version = versionFromBody || versionFromHeader;
-        const msg =
-          typeof data?.error === "string" && data.error.trim()
-            ? data.error.trim()
-            : rawText && String(rawText).trim()
-              ? `AI 服務錯誤（HTTP ${resp.status}）`
-              : `AI 服務錯誤（HTTP ${resp.status}）`;
-        showToast(version ? `${msg}（${version}）` : msg, { variant: "warn", durationMs: 2600 });
-        return;
-      }
-      const updates = data?.updates;
-      if (!updates || typeof updates !== "object") {
-        showToast("AI 回覆格式不正確", { variant: "warn", durationMs: 2200 });
-        return;
-      }
-
-      const ok = applyAiPlanUpdates(updates);
-      if (!ok) {
-        showToast("未能套用 AI 編排結果", { variant: "warn", durationMs: 2200 });
-        return;
-      }
-
-      showToast("已套用 AI 編排");
-      overlay.remove();
-    } catch {
-      showToast("連線失敗（請稍後再試）", { variant: "warn", durationMs: 2200 });
-    } finally {
-      submit.disabled = false;
-      submit.textContent = prevText;
-    }
-  });
-
-  form.appendChild(actions);
-
-  modal.appendChild(title);
-  modal.appendChild(subtitle);
-  modal.appendChild(racesBox);
-  modal.appendChild(form);
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
-
-  window.setTimeout(() => notes.focus(), 0);
 }
 
 function openRaceInputModal() {
@@ -3942,7 +3164,6 @@ function openRaceInputModal() {
         if (w && (!Array.isArray(w.races) || w.races.length === 0)) {
           w.priority = "";
         }
-        applyCoachAutoRules();
         persistState();
         renderList();
         renderCalendar();
@@ -4052,7 +3273,6 @@ function openRaceInputModal() {
     kind.value = "";
     priority.value = "";
     w.priority = racePriority;
-    applyCoachAutoRules();
     persistState();
     renderList();
     renderCalendar();
@@ -4123,41 +3343,11 @@ function wireButtons() {
   }
 
   const annualVolumeInput = document.getElementById("annualVolumeInput");
-  const startWeeklyInput = document.getElementById("startWeeklyInput");
-  const maxUpPctInput = document.getElementById("maxUpPctInput");
-  const maxDownPctInput = document.getElementById("maxDownPctInput");
   const annualVolumeApplyBtn = document.getElementById("annualVolumeApplyBtn");
   const annualVolumeClearBtn = document.getElementById("annualVolumeClearBtn");
   if (annualVolumeInput) {
     annualVolumeInput.value = Number.isFinite(state.ytdVolumeHrs) && state.ytdVolumeHrs > 0 ? String(state.ytdVolumeHrs) : "";
     annualVolumeInput.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter") return;
-      e.preventDefault();
-      annualVolumeApplyBtn?.click();
-    });
-  }
-  if (startWeeklyInput) {
-    const v = Number(state?.annualVolumeSettings?.startWeeklyHrs);
-    startWeeklyInput.value = Number.isFinite(v) && v > 0 ? String(v) : "";
-    startWeeklyInput.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter") return;
-      e.preventDefault();
-      annualVolumeApplyBtn?.click();
-    });
-  }
-  if (maxUpPctInput) {
-    const v = Number(state?.annualVolumeSettings?.maxUpPct);
-    maxUpPctInput.value = Number.isFinite(v) ? String(v) : "12";
-    maxUpPctInput.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter") return;
-      e.preventDefault();
-      annualVolumeApplyBtn?.click();
-    });
-  }
-  if (maxDownPctInput) {
-    const v = Number(state?.annualVolumeSettings?.maxDownPct);
-    maxDownPctInput.value = Number.isFinite(v) ? String(v) : "25";
-    maxDownPctInput.addEventListener("keydown", (e) => {
       if (e.key !== "Enter") return;
       e.preventDefault();
       annualVolumeApplyBtn?.click();
@@ -4171,55 +3361,21 @@ function wireButtons() {
         showToast("請輸入有效的年總訓練量（小時）", { variant: "warn", durationMs: 1800 });
         return;
       }
-      const startWeeklyHrsRaw = startWeeklyInput ? String(startWeeklyInput.value || "").trim() : "";
-      const startWeeklyHrs = startWeeklyHrsRaw ? Number(startWeeklyHrsRaw) : null;
-      if (startWeeklyHrsRaw && (!Number.isFinite(startWeeklyHrs) || startWeeklyHrs <= 0)) {
-        showToast("請輸入有效的起始週量（小時）", { variant: "warn", durationMs: 1800 });
-        return;
-      }
-      if (startWeeklyHrsRaw && Number.isFinite(startWeeklyHrs) && startWeeklyHrs > v) {
-        showToast("起始週量不能大於年總訓練量", { variant: "warn", durationMs: 1800 });
-        return;
-      }
-
-      const maxUpPctRaw = maxUpPctInput ? String(maxUpPctInput.value || "").trim() : "";
-      const maxDownPctRaw = maxDownPctInput ? String(maxDownPctInput.value || "").trim() : "";
-      const maxUpPct = maxUpPctRaw ? Number(maxUpPctRaw) : 12;
-      const maxDownPct = maxDownPctRaw ? Number(maxDownPctRaw) : 25;
-      if (!Number.isFinite(maxUpPct) || maxUpPct < 0 || maxUpPct > 50) {
-        showToast("每週最大增幅（%）請輸入 0 - 50", { variant: "warn", durationMs: 1800 });
-        return;
-      }
-      if (!Number.isFinite(maxDownPct) || maxDownPct < 0 || maxDownPct > 80) {
-        showToast("每週最大降幅（%）請輸入 0 - 80", { variant: "warn", durationMs: 1800 });
-        return;
-      }
-
       pushHistory();
-      state.annualVolumeSettings = {
-        startWeeklyHrs: startWeeklyHrs && Number.isFinite(startWeeklyHrs) ? Math.round(startWeeklyHrs * 10) / 10 : null,
-        maxUpPct,
-        maxDownPct,
-      };
-      applyAnnualVolumeToWeeks(v);
-      applyCoachDayPlanRules({ start: 0, end: 51 });
+      state.ytdVolumeHrs = v;
       persistState();
       updateHeader();
       renderCalendar();
       renderCharts();
       renderWeekDetails();
-      showToast("已套用年總訓練量分配");
+      showToast("已更新年總訓練量設定");
     });
   }
   if (annualVolumeClearBtn && annualVolumeInput) {
     annualVolumeClearBtn.addEventListener("click", () => {
       pushHistory();
       state.ytdVolumeHrs = null;
-      state.annualVolumeSettings = { startWeeklyHrs: null, maxUpPct: 12, maxDownPct: 25 };
       annualVolumeInput.value = "";
-      if (startWeeklyInput) startWeeklyInput.value = "";
-      if (maxUpPctInput) maxUpPctInput.value = "12";
-      if (maxDownPctInput) maxDownPctInput.value = "25";
       persistState();
       updateHeader();
       renderCalendar();
@@ -4233,18 +3389,6 @@ function wireButtons() {
   if (raceInputBtn) {
     raceInputBtn.addEventListener("click", () => openRaceInputModal());
   }
-
-  let aiPlanBtn = document.getElementById("aiPlanBtn");
-  if (!aiPlanBtn && raceInputBtn && raceInputBtn.parentElement) {
-    const btn = document.createElement("button");
-    btn.id = "aiPlanBtn";
-    btn.className = "btn";
-    btn.type = "button";
-    btn.textContent = "AI 編排";
-    raceInputBtn.insertAdjacentElement("afterend", btn);
-    aiPlanBtn = btn;
-  }
-  if (aiPlanBtn) aiPlanBtn.addEventListener("click", () => openAiPlanModal());
 
   const exportPdfBtn = document.getElementById("exportPdfBtn");
   if (exportPdfBtn) exportPdfBtn.addEventListener("click", () => exportCalendarPdf());
@@ -4273,7 +3417,6 @@ function wireButtons() {
     generateBtn.addEventListener("click", () => {
       pushHistory();
       generatePlan();
-      applyCoachDayPlanRules({ start: 0, end: 51 });
       updateHeader();
       renderCalendar();
       renderWeekDetails();
@@ -4380,16 +3523,6 @@ function init() {
       w.block = normalizeBlockValue(w.block);
       if (!w.block) w.block = "Base";
       getWeekSessions(w);
-      if (Array.isArray(w.sessions) && w.sessions.length) {
-        w.sessions.forEach((s) => {
-          const raw = typeof s?.note === "string" ? s.note : "";
-          if (!raw) return;
-          const parts = splitAutoNote(raw);
-          if (!parts.has || !parts.legacy) return;
-          const next = mergeAutoNote(raw, parts.auto);
-          if (next !== raw) s.note = next;
-        });
-      }
     });
   }
   if (typeof persisted?.selectedWeekIndex === "number") {
