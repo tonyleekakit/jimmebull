@@ -1070,7 +1070,7 @@ function sessionPlanForDay(weekIndex, day, ctx) {
 
   if (phase === "Tempo") {
     const idx = phaseStreakIndex(weekIndex, phase);
-    const main = clamp(30 + idx * 5, 30, 45);
+    const main = minutes > 0 ? minutes : clamp(30 + idx * 5, 30, 45);
     const details = [`主課：節奏跑 ${main}'（30–45'，可每週 +5'）`, "另加：熱身／放鬆"];
     return { zone: 3, rpe: rpeOverride ?? 6, workoutMinutes: main, noteBody: buildAutoNoteBodyForPlan({ title: "節奏", details, minutes: main, rpeText: "5–6" }) };
   }
@@ -1078,10 +1078,10 @@ function sessionPlanForDay(weekIndex, day, ctx) {
     const idx = phaseStreakIndex(weekIndex, phase);
     const repMin = clamp(6 + Math.floor(idx / 2) * 2, 6, 12);
     const restMin = Math.max(1, Math.round(repMin / 4));
-    const sets = clamp(3 + Math.floor(idx / 2), 3, 5);
-    const details = [`主課：${sets} × ${repMin}'（跑/休 4:1，休 ${restMin}'）`];
+    const sets = minutes > 0 ? Math.max(1, Math.round(minutes / repMin)) : clamp(3 + Math.floor(idx / 2), 3, 5);
+    const workoutMinutes = minutes > 0 ? minutes : Math.max(0, Math.round(sets * repMin));
+    const details = [`主課：總量 ${workoutMinutes}'（建議：${sets} × ${repMin}'，跑/休 4:1，休 ${restMin}'）`];
     details.push("另加：熱身／放鬆");
-    const workoutMinutes = Math.max(0, Math.round(sets * repMin));
     return {
       zone: 4,
       rpe: rpeOverride ?? 8,
@@ -1091,7 +1091,7 @@ function sessionPlanForDay(weekIndex, day, ctx) {
   }
   if (phase === "VO2Max") {
     const idx = phaseStreakIndex(weekIndex, phase);
-    const workTotal = clamp(5 + idx * 2, 5, 15);
+    const workTotal = minutes > 0 ? minutes : clamp(5 + idx * 2, 5, 15);
     const repMin = workTotal <= 6 ? 1 : workTotal <= 9 ? 2 : workTotal <= 12 ? 3 : 4;
     const reps = Math.max(1, Math.round(workTotal / repMin));
     const details = [`主課：${reps} × ${repMin}'（跑/休 1:1）`, "總量：由 5' 逐週加到最多 15'", "另加：熱身／放鬆"];
@@ -1105,7 +1105,7 @@ function sessionPlanForDay(weekIndex, day, ctx) {
   }
   if (phase === "Anaerobic") {
     const idx = phaseStreakIndex(weekIndex, phase);
-    const workTotal = clamp(5 + idx * 2, 5, 15);
+    const workTotal = minutes > 0 ? minutes : clamp(5 + idx * 2, 5, 15);
     const repSec = workTotal <= 8 ? 30 : 60;
     const repMin = repSec === 30 ? 0.5 : 1;
     const reps = Math.max(1, Math.round(workTotal / repMin));
@@ -1456,6 +1456,45 @@ function computeWeekDayPlans(weekIndex) {
 
   const constrained = applyLoadConstraintsToPlans(idx, rebalanced, { block, isRaceWeek, raceDay, minuteOptions: options });
   return { block, targetMinutes, plans: constrained.plans, volumeHrsOverride: constrained.volumeHrsOverride };
+}
+
+function applyAutoSessionsForWeek(weekIndex) {
+  const idx = clamp(Number(weekIndex) || 0, 0, 51);
+  const w = state.weeks[idx];
+  if (!w) return { ok: false, reason: "Invalid week index" };
+
+  const dayPlan = computeWeekDayPlans(idx);
+  if (!dayPlan || !Array.isArray(dayPlan.plans) || dayPlan.plans.length !== 7) {
+    return { ok: false, reason: "Missing weekly volume" };
+  }
+
+  const sessions = getWeekSessions(w);
+  if (!Array.isArray(w.sessions) || !w.sessions.length) w.sessions = sessions;
+
+  if (typeof dayPlan.volumeHrsOverride === "string") {
+    w.volumeHrs = dayPlan.volumeHrsOverride;
+    w.volumeMode = "direct";
+    w.volumeFactor = 1;
+  }
+
+  for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+    const p = dayPlan.plans[dayIndex] || { type: "Rest", minutes: 0, phase: "", race: null, rpeOverride: 1 };
+    const s = sessions[dayIndex];
+    if (!s) continue;
+
+    const plan = sessionPlanForDay(idx, p, { block: dayPlan.block });
+    const plannedMinutes = Math.max(0, Math.round(Number(p?.minutes) || 0));
+
+    s.kind = "Run";
+    s.zone = clamp(Number(plan.zone) || 1, 1, 6);
+    s.rpe = clamp(Number(plan.rpe) || 1, 1, 10);
+    s.workoutsCount = 1;
+    s.workouts = [{ duration: plannedMinutes, rpe: s.rpe }];
+    s.note = typeof plan.noteBody === "string" ? plan.noteBody : "";
+    ensureSessionWorkouts(s);
+  }
+
+  return { ok: true, volumeHrsOverride: typeof dayPlan.volumeHrsOverride === "string" ? dayPlan.volumeHrsOverride : null };
 }
 
 const PHASE_LABELS_ZH = {
@@ -3532,6 +3571,8 @@ function wireButtons() {
   const annualVolumeInput = document.getElementById("annualVolumeInput");
   const annualVolumeApplyBtn = document.getElementById("annualVolumeApplyBtn");
   const annualVolumeClearBtn = document.getElementById("annualVolumeClearBtn");
+  const autoFillWeekBtn = document.getElementById("autoFillWeekBtn");
+  const autoFillAllBtn = document.getElementById("autoFillAllBtn");
   if (annualVolumeInput) {
     annualVolumeInput.value = Number.isFinite(state.ytdVolumeHrs) && state.ytdVolumeHrs > 0 ? String(state.ytdVolumeHrs) : "";
     annualVolumeInput.addEventListener("keydown", (e) => {
@@ -3569,6 +3610,52 @@ function wireButtons() {
       renderCharts();
       renderWeekDetails();
       showToast("已清除年總訓練量設定");
+    });
+  }
+
+  if (autoFillWeekBtn) {
+    autoFillWeekBtn.addEventListener("click", () => {
+      const w = state.weeks[state.selectedWeekIndex];
+      if (!w) return;
+      const hasVolume = Number(w.volumeHrs) > 0;
+      if (!hasVolume) {
+        showToast("請先設定本週訓練量（小時）", { variant: "warn", durationMs: 1800 });
+        return;
+      }
+      pushHistory();
+      const out = applyAutoSessionsForWeek(state.selectedWeekIndex);
+      if (!out.ok) {
+        showToast("未能自動填充本週課表", { variant: "warn", durationMs: 1800 });
+        return;
+      }
+      persistState();
+      updateHeader();
+      renderCalendar();
+      renderCharts();
+      renderWeekDetails();
+      showToast("已自動填充本週課表");
+    });
+  }
+
+  if (autoFillAllBtn) {
+    autoFillAllBtn.addEventListener("click", () => {
+      const ok = window.confirm("確定要自動填充 52 週課表？此操作會覆蓋現有每日課表內容。");
+      if (!ok) return;
+      pushHistory();
+      let changed = 0;
+      for (let i = 0; i < 52; i++) {
+        const w = state.weeks[i];
+        if (!w) continue;
+        if (!(Number(w.volumeHrs) > 0)) continue;
+        const out = applyAutoSessionsForWeek(i);
+        if (out.ok) changed++;
+      }
+      persistState();
+      updateHeader();
+      renderCalendar();
+      renderCharts();
+      renderWeekDetails();
+      showToast(changed ? `已自動填充 ${changed} 週課表` : "未有可填充的週（請先設定訓練量）", { durationMs: 2200 });
     });
   }
 
