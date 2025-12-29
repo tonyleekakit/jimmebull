@@ -391,6 +391,49 @@ const BLOCK_LABELS_ZH = {
   Transition: "過渡",
 };
 
+function isRaceWeekByIndex(weekIndex) {
+  const idx = clamp(Number(weekIndex) || 0, 0, 51);
+  const w = state?.weeks?.[idx];
+  if (!w) return false;
+  return Array.isArray(w.races) && w.races.length > 0;
+}
+
+function defaultVolumeFactorForWeekIndex(weekIndex) {
+  const idx = clamp(Number(weekIndex) || 0, 0, 51);
+  const w = state?.weeks?.[idx];
+  const block = normalizeBlockValue(w?.block || "") || "Base";
+
+  if (block === "Peak") {
+    if (isRaceWeekByIndex(idx)) return 0.6;
+    if (idx < 51 && isRaceWeekByIndex(idx + 1)) return 0.8;
+    return 1;
+  }
+
+  if (block === "Base") return 1.2;
+  if (block === "Deload") return 0.6;
+  if (block === "Build") return 1;
+  if (block === "Transition") return 1;
+  return 1;
+}
+
+function refreshAutoVolumeFactors() {
+  if (!state || !Array.isArray(state.weeks) || state.weeks.length !== 52) return false;
+  let changed = false;
+  for (let i = 0; i < 52; i++) {
+    const w = state.weeks[i];
+    if (!w) continue;
+    if (w.volumeMode !== "formula") continue;
+    if (w.volumeFactorAuto !== true) continue;
+    const next = defaultVolumeFactorForWeekIndex(i);
+    if (Number(w.volumeFactor) !== next) {
+      w.volumeFactor = next;
+      changed = true;
+    }
+  }
+  if (changed) recomputeFormulaVolumes();
+  return changed;
+}
+
 function computeCoachBlockByRules() {
   const out = new Array(52).fill("");
   const rank = { "": 0, Base: 0, Deload: 0, Build: 1, Transition: 2, Peak: 3 };
@@ -2254,6 +2297,7 @@ function persistState() {
         volumeHrs: w.volumeHrs || "",
         volumeMode: w.volumeMode || "direct",
         volumeFactor: Number.isFinite(Number(w.volumeFactor)) ? Number(w.volumeFactor) : 1,
+        volumeFactorAuto: w.volumeFactorAuto === true,
         sessions: Array.isArray(w.sessions)
           ? w.sessions.map((s) => ({
               dayLabel: s?.dayLabel || "",
@@ -2320,6 +2364,7 @@ function snapshotForHistory() {
       volumeHrs: w.volumeHrs || "",
       volumeMode: w.volumeMode || "direct",
       volumeFactor: Number.isFinite(Number(w.volumeFactor)) ? Number(w.volumeFactor) : 1,
+      volumeFactorAuto: w.volumeFactorAuto === true,
       sessions: Array.isArray(w.sessions)
         ? w.sessions.map((s) => ({
             dayLabel: s?.dayLabel || "",
@@ -2365,6 +2410,7 @@ function applyHistorySnapshot(snapshot) {
     w.volumeHrs = typeof p.volumeHrs === "string" ? p.volumeHrs : "";
     w.volumeMode = typeof p.volumeMode === "string" ? p.volumeMode : "direct";
     w.volumeFactor = Number.isFinite(Number(p.volumeFactor)) ? Number(p.volumeFactor) : 1;
+    w.volumeFactorAuto = p.volumeFactorAuto === true;
     w.sessions = Array.isArray(p.sessions)
       ? p.sessions.map((s, i) => {
           const next = {
@@ -2434,6 +2480,7 @@ function buildInitialWeeks() {
       volumeHrs: "",
       volumeMode: "direct",
       volumeFactor: 1,
+      volumeFactorAuto: false,
       sessions: buildDefaultSessions(),
     });
   }
@@ -2450,6 +2497,7 @@ function generatePlan() {
     w.volumeHrs = `${volume.toFixed(1)}`;
     w.volumeMode = "direct";
     w.volumeFactor = 1;
+    w.volumeFactorAuto = false;
   }
 }
 
@@ -2591,6 +2639,7 @@ function renderCalendar() {
           pushHistory();
           w.block = select.value;
           applyCoachPhaseRules();
+          refreshAutoVolumeFactors();
           persistState();
           updateHeader();
           renderCalendar();
@@ -3091,13 +3140,17 @@ function openPlannedVolumeModal(weekIndex) {
   modeFormula.type = "button";
   modeFormula.className = "btn volumeToggleBtn";
   modeFormula.textContent = "公式";
-  let mode = w.volumeMode === "formula" ? "formula" : "direct";
+  let mode = idx >= 4 ? "formula" : w.volumeMode === "formula" ? "formula" : "direct";
   const syncMode = () => {
     modeDirect.classList.toggle("is-active", mode === "direct");
     modeFormula.classList.toggle("is-active", mode === "formula");
     row3.hidden = mode !== "direct";
     row4.hidden = mode !== "formula";
     row4b.hidden = mode !== "formula";
+    if (mode === "formula" && factor && factor.dataset.touched !== "1") {
+      const v = defaultFactorForThisWeek();
+      factor.value = Number.isFinite(v) ? String(Math.round(v * 100) / 100) : "1.00";
+    }
   };
   modeDirect.addEventListener("click", () => {
     mode = "direct";
@@ -3124,9 +3177,9 @@ function openPlannedVolumeModal(weekIndex) {
   applyYes.textContent = "是";
   const applyNo = document.createElement("button");
   applyNo.type = "button";
-  applyNo.className = "btn volumeToggleBtn is-active";
+  applyNo.className = "btn volumeToggleBtn";
   applyNo.textContent = "否";
-  let applyToOthers = false;
+  let applyToOthers = idx >= 4;
   const syncToggle = () => {
     applyYes.classList.toggle("is-active", applyToOthers);
     applyNo.classList.toggle("is-active", !applyToOthers);
@@ -3165,7 +3218,15 @@ function openPlannedVolumeModal(weekIndex) {
   factor.inputMode = "decimal";
   factor.step = "0.01";
   factor.placeholder = "例如：1.10";
-  factor.value = Number.isFinite(Number(w.volumeFactor)) ? String(w.volumeFactor) : "1.00";
+  const defaultFactorForThisWeek = () => defaultVolumeFactorForWeekIndex(idx);
+  const initialFactor = (() => {
+    if (mode === "formula") {
+      if (w.volumeMode === "formula" && w.volumeFactorAuto !== true && Number.isFinite(Number(w.volumeFactor))) return Number(w.volumeFactor);
+      return defaultFactorForThisWeek();
+    }
+    return Number.isFinite(Number(w.volumeFactor)) ? Number(w.volumeFactor) : defaultFactorForThisWeek();
+  })();
+  factor.value = Number.isFinite(initialFactor) ? String(Math.round(initialFactor * 100) / 100) : "1.00";
   row4.appendChild(factor);
   form.appendChild(row4);
 
@@ -3200,7 +3261,10 @@ function openPlannedVolumeModal(weekIndex) {
     preview.textContent = out ? `${out} 小時` : "—";
   };
 
-  factor.addEventListener("input", updatePreview);
+  factor.addEventListener("input", () => {
+    factor.dataset.touched = "1";
+    updatePreview();
+  });
 
   form.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -3219,6 +3283,7 @@ function openPlannedVolumeModal(weekIndex) {
         if (!wk) continue;
         wk.volumeMode = "direct";
         wk.volumeFactor = 1;
+        wk.volumeFactorAuto = false;
         wk.volumeHrs = next;
       }
       recomputeFormulaVolumes();
@@ -3236,14 +3301,24 @@ function openPlannedVolumeModal(weekIndex) {
           if (k < 4) {
             wk.volumeMode = "direct";
             if (!Number.isFinite(Number(wk.volumeFactor))) wk.volumeFactor = 1;
+            wk.volumeFactorAuto = false;
           } else {
             wk.volumeMode = "formula";
-            wk.volumeFactor = f;
+            wk.volumeFactor = defaultVolumeFactorForWeekIndex(k);
+            wk.volumeFactorAuto = true;
           }
         }
+        if (idx >= 4) {
+          const df = defaultVolumeFactorForWeekIndex(idx);
+          w.volumeMode = "formula";
+          w.volumeFactor = f;
+          w.volumeFactorAuto = Number.isFinite(df) && Number.isFinite(f) ? Math.abs(f - df) < 1e-9 : false;
+        }
       } else {
+        const df = defaultVolumeFactorForWeekIndex(idx);
         w.volumeMode = "formula";
         w.volumeFactor = f;
+        w.volumeFactorAuto = Number.isFinite(df) && Number.isFinite(f) ? Math.abs(f - df) < 1e-9 : false;
       }
       recomputeFormulaVolumes();
     }
@@ -3262,6 +3337,7 @@ function openPlannedVolumeModal(weekIndex) {
   document.body.appendChild(overlay);
 
   document.addEventListener("keydown", onKeyDown);
+  syncToggle();
   syncMode();
   updatePreview();
   window.setTimeout(() => (mode === "formula" ? factor.focus() : direct.focus()), 0);
@@ -3333,6 +3409,7 @@ function reassignAllRacesByDate() {
   });
 
   applyCoachAutoRules();
+  refreshAutoVolumeFactors();
 }
 
 function openRaceInputModal() {
@@ -3389,9 +3466,12 @@ function openRaceInputModal() {
           w.priority = "";
         }
         applyCoachAutoRules();
+        refreshAutoVolumeFactors();
         persistState();
         renderList();
+        updateHeader();
         renderCalendar();
+        renderCharts();
         renderWeekDetails();
       });
       row.appendChild(del);
@@ -3499,9 +3579,12 @@ function openRaceInputModal() {
     priority.value = "";
     w.priority = racePriority;
     applyCoachAutoRules();
+    refreshAutoVolumeFactors();
     persistState();
     renderList();
+    updateHeader();
     renderCalendar();
+    renderCharts();
     renderWeekDetails();
   });
 
@@ -3763,6 +3846,7 @@ function init() {
       w.volumeHrs = typeof p.volumeHrs === "string" ? p.volumeHrs : "";
       w.volumeMode = typeof p.volumeMode === "string" ? p.volumeMode : "direct";
       w.volumeFactor = Number.isFinite(Number(p.volumeFactor)) ? Number(p.volumeFactor) : 1;
+      w.volumeFactorAuto = p.volumeFactorAuto === true;
       w.sessions = Array.isArray(p.sessions) && p.sessions.length
         ? p.sessions.map((s, i) => {
             const next = {
