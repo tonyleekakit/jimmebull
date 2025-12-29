@@ -2558,45 +2558,15 @@ function applyAnnualVolumeToWeeks(annualVolumeHrs) {
     return { min: 1.0, max: 1.0, factor: 1.0 };
   };
 
-  const meanPrev = (arr, endIndex, lookback) => {
-    const end = clamp(Number(endIndex) || 0, 0, arr.length);
-    const back = clamp(Number(lookback) || 0, 0, 10);
-    const start = Math.max(0, end - back);
-    let sum = 0;
-    let count = 0;
-    for (let i = start; i < end; i++) {
-      const v = Number(arr[i]) || 0;
-      if (v > 0) {
-        sum += v;
-        count++;
-      }
-    }
-    return count ? sum / count : 0;
-  };
-
-  const defaultWeekVolume = (weekIndex) => {
-    const idx = clamp(Number(weekIndex) || 0, 0, 51);
-    const v = normalizeBlockValue(blocks[idx] || "") || "Base";
-    if (v === "Deload") return Math.max(0.1, weeklyAvg * 0.8);
-    if (v === "Peak") return Math.max(0.1, weeklyAvg * (hasRace[idx] ? 0.6 : 0.8));
-    if (v === "Transition") return Math.max(0.1, weeklyAvg * 0.95);
-    return Math.max(0.1, weeklyAvg);
-  };
-
-  const shape = new Array(52).fill(0);
-  for (let i = 0; i < 4; i++) shape[i] = defaultWeekVolume(i);
-  for (let i = 4; i < 52; i++) {
-    const chronic4 = meanPrev(shape, i, 4) || defaultWeekVolume(i);
+  const weights = new Array(52).fill(0).map((_, i) => {
     const spec = factorSpecForWeek(i);
-    const lo = Math.max(0.01, chronic4 * spec.min);
-    const hi = Math.max(lo, chronic4 * spec.max);
-    const raw = chronic4 * spec.factor;
-    shape[i] = clamp(raw, lo, hi);
-  }
+    const f = Number(spec?.factor);
+    return Math.max(0.01, Number.isFinite(f) ? f : 1);
+  });
 
-  const sumShape = shape.reduce((a, b) => a + b, 0);
-  if (!Number.isFinite(sumShape) || sumShape <= 0) return false;
-  const scaled = shape.map((v) => (v * targetTotal) / sumShape);
+  const sumWeights = weights.reduce((a, b) => a + b, 0);
+  if (!Number.isFinite(sumWeights) || sumWeights <= 0) return false;
+  const scaled = weights.map((v) => (v * targetTotal) / sumWeights);
 
   const targetTenths = Math.round(targetTotal * 10);
   const rawTenths = scaled.map((v) => Math.max(0, Number(v) || 0) * 10);
