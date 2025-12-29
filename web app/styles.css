@@ -397,7 +397,7 @@ body {
   color: #ffffff !important;
 }
 
-.calCell--acwrAlert {
+.calCell.calCell--acwrAlert {
   background: #ef4444;
 }
 
