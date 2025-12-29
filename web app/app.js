@@ -2602,7 +2602,7 @@ function renderCalendar() {
           if (m.monotony !== null && m.monotony > 2) cell.classList.add("calCell--alert");
         } else if (row.key === "acwr") {
           setCellText(cell, m.acwr === null ? "—" : m.acwr.toFixed(2));
-          if (m.acwr !== null && m.acwr > 1.5) cell.classList.add("calCell--alert");
+          if (m.acwr !== null && m.acwr > 1.5) cell.classList.add("calCell--acwrAlert");
         } else {
           setCellText(cell, "—");
         }
