@@ -2552,7 +2552,7 @@ function applyAnnualVolumeToWeeks(annualVolumeHrs) {
       return { min: 0.8, max: 0.8, factor: 0.8 };
     }
     if (v === "Base") return { min: 1.1, max: 1.5, factor: lerp(1.1, 1.5, volumeLevel) };
-    if (v === "Deload") return { min: 0.5, max: 0.8, factor: lerp(0.5, 0.8, volumeLevel) };
+    if (v === "Deload") return { min: 0.75, max: 0.85, factor: lerp(0.75, 0.85, volumeLevel) };
     if (v === "Build") return { min: 1.0, max: 1.1, factor: lerp(1.0, 1.1, volumeLevel) };
     if (v === "Transition") return { min: 0.8, max: 1.1, factor: lerp(0.8, 1.1, volumeLevel) };
     return { min: 1.0, max: 1.0, factor: 1.0 };
@@ -2577,7 +2577,7 @@ function applyAnnualVolumeToWeeks(annualVolumeHrs) {
   const defaultWeekVolume = (weekIndex) => {
     const idx = clamp(Number(weekIndex) || 0, 0, 51);
     const v = normalizeBlockValue(blocks[idx] || "") || "Base";
-    if (v === "Deload") return Math.max(0.1, weeklyAvg * 0.7);
+    if (v === "Deload") return Math.max(0.1, weeklyAvg * 0.8);
     if (v === "Peak") return Math.max(0.1, weeklyAvg * (hasRace[idx] ? 0.6 : 0.8));
     if (v === "Transition") return Math.max(0.1, weeklyAvg * 0.95);
     return Math.max(0.1, weeklyAvg);
