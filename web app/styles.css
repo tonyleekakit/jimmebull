@@ -8,12 +8,12 @@
   --shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 10px 30px rgba(15, 23, 42, 0.12);
   --radius: 12px;
   --radiusSm: 10px;
-  --accent: #1d4ed8;
-  --accentHover: #2563eb;
-  --accentSoft: rgba(29, 78, 216, 0.12);
-  --accentGrad: linear-gradient(180deg, #3b82f6, #1d4ed8);
-  --ring: rgba(29, 78, 216, 0.22);
-  --ringSoft: rgba(29, 78, 216, 0.08);
+  --accent: #16a34a;
+  --accentHover: #22c55e;
+  --accentSoft: rgba(22, 163, 74, 0.12);
+  --accentGrad: linear-gradient(180deg, #4ade80, #16a34a);
+  --ring: rgba(22, 163, 74, 0.22);
+  --ringSoft: rgba(22, 163, 74, 0.08);
   --cellW: 40px;
   --labelW: 120px;
   --cellH: 26px;
@@ -38,8 +38,8 @@ body {
 body {
   margin: 0;
   font-family: var(--fontBody);
-  background: radial-gradient(900px 520px at 20% 0%, rgba(29, 78, 216, 0.08), transparent 60%),
-    radial-gradient(900px 520px at 80% 0%, rgba(59, 130, 246, 0.06), transparent 60%),
+  background: radial-gradient(900px 520px at 20% 0%, rgba(22, 163, 74, 0.08), transparent 60%),
+    radial-gradient(900px 520px at 80% 0%, rgba(74, 222, 128, 0.06), transparent 60%),
     linear-gradient(180deg, var(--bg), #ffffff 75%);
   color: var(--text);
   line-height: 1.45;
@@ -140,7 +140,7 @@ body {
 }
 
 .btn:hover {
-  border-color: rgba(29, 78, 216, 0.45);
+  border-color: rgba(22, 163, 74, 0.45);
   box-shadow: 0 0 0 3px var(--ringSoft), var(--shadow);
 }
 
@@ -157,7 +157,7 @@ body {
   background: var(--accentGrad);
   border-color: var(--accent);
   color: var(--text);
-  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.12), 0 18px 40px rgba(15, 23, 42, 0.18);
+  box-shadow: 0 0 0 3px var(--accentSoft), 0 18px 40px rgba(15, 23, 42, 0.18);
 }
 
 .btn--primary:hover {
@@ -282,6 +282,12 @@ body {
   background: var(--surface);
   box-shadow: var(--shadow);
   flex: 1 1 auto;
+  --accent: #1d4ed8;
+  --accentHover: #2563eb;
+  --accentSoft: rgba(29, 78, 216, 0.12);
+  --accentGrad: linear-gradient(180deg, #3b82f6, #1d4ed8);
+  --ring: rgba(29, 78, 216, 0.22);
+  --ringSoft: rgba(29, 78, 216, 0.08);
 }
 
 .calendar {
@@ -770,7 +776,7 @@ body {
   color: var(--accent);
   padding: 4px 10px;
   border: 1px solid var(--ring);
-  background: rgba(29, 78, 216, 0.06);
+  background: var(--accentSoft);
   border-radius: 12px;
   white-space: nowrap;
 }
@@ -1106,7 +1112,7 @@ body {
 }
 
 .chartBand--blue {
-  fill: rgba(29, 78, 216, 0.14);
+  fill: rgba(22, 163, 74, 0.14);
 }
 
 .chartBand--green {
@@ -1237,7 +1243,7 @@ body {
 
 .volumeToggleBtn.is-active {
   background: var(--accentSoft);
-  border-color: rgba(29, 78, 216, 0.25);
+  border-color: rgba(22, 163, 74, 0.25);
 }
 
 .weekModal {
