@@ -377,8 +377,24 @@ function wireHowTo() {
   document.querySelectorAll("[data-howto-shot-key]").forEach((wrap) => {
     const key = String(wrap.getAttribute("data-howto-shot-key") || "").trim();
     if (!key) return;
-    const current = readShot(key);
-    setShotUI(wrap, current);
+    const stored = readShot(key);
+    if (stored) {
+      setShotUI(wrap, stored);
+      return;
+    }
+
+    const img = wrap.querySelector(".howtoShot__img");
+    const staticSrc = img ? String(img.getAttribute("data-static-src") || "").trim() : "";
+    if (!img || !staticSrc) {
+      setShotUI(wrap, "");
+      return;
+    }
+
+    if (img.dataset.howtoStaticWired !== "1") {
+      img.dataset.howtoStaticWired = "1";
+      img.addEventListener("error", () => setShotUI(wrap, ""));
+    }
+    setShotUI(wrap, staticSrc);
   });
 }
 
