@@ -16,6 +16,7 @@
       <a class="brand" href="#plan" aria-label="返回訓練監控">
         <img class="brand__img" src="./assets/logo.png" alt="Logo" onerror="this.style.display='none';" />
       </a>
+      <button id="authBtn" class="btn authBtn" type="button">登入</button>
     </header>
 
     <main class="page">
@@ -214,6 +215,13 @@
       </section>
     </main>
 
+    <script>
+      globalThis.__SUPABASE__ = {
+        url: "https://yonmaiyxjewsdnyvkzvm.supabase.co",
+        anonKey: "sb_publishable_JjjPDuMbjhS6NsOiNWn9YQ_5VrjOFqN",
+      };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="./app.js"></script>
   </body>
 </html>

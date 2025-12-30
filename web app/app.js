@@ -2224,8 +2224,30 @@ function scheduleFitCalendarText() {
 
 const STORAGE_KEY = "trainingPlanDemo_v1";
 const CALENDAR_SIZE_KEY = "trainingPlanDemo_calendarSize_v1";
+const CLOUD_META_KEY = "trainingPlanDemo_cloudMeta_v1";
+const SUPABASE_URL = String(globalThis?.__SUPABASE__?.url || "").trim();
+const SUPABASE_ANON_KEY = String(globalThis?.__SUPABASE__?.anonKey || "").trim();
+const SUPABASE_STATE_TABLE = "training_state";
+const supabaseClient =
+  SUPABASE_URL && SUPABASE_ANON_KEY && typeof supabase?.createClient === "function" ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+let authUser = null;
+let cloudSaveTimer = null;
+let cloudSavePendingJson = "";
+let cloudSaveInFlight = false;
 
 let calendarBaseVars = null;
+
+function canPersistTrainingState() {
+  return Boolean(authUser);
+}
+
+function clearPersistedTrainingState() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(CLOUD_META_KEY);
+  } catch {}
+}
 
 function readRootPxVar(name, fallback) {
   const raw = window.getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -2312,6 +2334,7 @@ function wireCalendarSizer() {
 }
 
 function loadPersistedState() {
+  if (!canPersistTrainingState()) return null;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
@@ -2324,6 +2347,7 @@ function loadPersistedState() {
 }
 
 function persistState() {
+  if (!canPersistTrainingState()) return;
   try {
     const payload = {
       startDate: formatYMD(state.startDate),
@@ -2355,7 +2379,509 @@ function persistState() {
       connected: state.connected,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    scheduleCloudSave(payload);
   } catch {}
+}
+
+function applyPersistedTrainingState(persisted) {
+  const persistedStartDate = parseYMD(persisted?.startDate);
+  if (persistedStartDate) {
+    state.startDate = startOfMonday(persistedStartDate);
+  }
+  state.ytdVolumeHrs = Number.isFinite(persisted?.ytdVolumeHrs) ? persisted.ytdVolumeHrs : null;
+  state.annualVolumeSettings =
+    persisted?.annualVolumeSettings && typeof persisted.annualVolumeSettings === "object"
+      ? {
+          startWeeklyHrs: Number.isFinite(Number(persisted.annualVolumeSettings.startWeeklyHrs)) ? Number(persisted.annualVolumeSettings.startWeeklyHrs) : null,
+          maxUpPct: Number.isFinite(Number(persisted.annualVolumeSettings.maxUpPct)) ? Number(persisted.annualVolumeSettings.maxUpPct) : 12,
+          maxDownPct: Number.isFinite(Number(persisted.annualVolumeSettings.maxDownPct)) ? Number(persisted.annualVolumeSettings.maxDownPct) : 25,
+        }
+      : { startWeeklyHrs: null, maxUpPct: 12, maxDownPct: 25 };
+  buildInitialWeeks();
+  if (persisted?.weeks?.length === 52) {
+    const seasonOptions = ["", "Base", "Build", "Peak", "Deload", "Transition"];
+    persisted.weeks.forEach((p, idx) => {
+      const w = state.weeks[idx];
+      if (!w) return;
+      w.priority = typeof p.priority === "string" ? p.priority : "";
+      w.block = typeof p.block === "string" ? normalizeBlockValue(p.block) : w.block;
+      w.season = typeof p.season === "string" ? p.season : "";
+      w.phases = normalizePhases(p?.phases ?? p?.phase);
+      w.volumeHrs = typeof p.volumeHrs === "string" ? p.volumeHrs : "";
+      w.volumeMode = typeof p.volumeMode === "string" ? p.volumeMode : "direct";
+      w.volumeFactor = Number.isFinite(Number(p.volumeFactor)) ? Number(p.volumeFactor) : 1;
+      w.volumeFactorAuto = p.volumeFactorAuto === true;
+      w.sessions = Array.isArray(p.sessions) && p.sessions.length
+        ? p.sessions.map((s, i) => {
+            const next = {
+              dayLabel: normalizeDayLabelZh(s?.dayLabel, i),
+              workoutsCount: Number(s?.workoutsCount) || 0,
+              workouts: Array.isArray(s?.workouts) ? s.workouts.map(normalizeWorkoutEntry) : [],
+              duration: Number(s?.duration) || 0,
+              zone: Number(s?.zone) || 0,
+              rpe: clamp(Number(s?.rpe) || 1, 1, 10),
+              kind: typeof s?.kind === "string" ? s.kind : "Run",
+              note: typeof s?.note === "string" ? s.note : "",
+            };
+            ensureSessionWorkouts(next);
+            return next;
+          })
+        : w.sessions;
+      w.races = Array.isArray(p.races)
+        ? p.races
+            .map((r) => ({
+              name: typeof r?.name === "string" ? r.name : "",
+              date: typeof r?.date === "string" ? r.date : "",
+              distanceKm: Number.isFinite(Number(r?.distanceKm)) && Number(r.distanceKm) > 0 ? Number(r.distanceKm) : null,
+              kind: typeof r?.kind === "string" ? r.kind : "",
+            }))
+            .filter((r) => r.name.trim() && r.date)
+        : [];
+
+      if (!w.block && seasonOptions.includes(w.season || "")) {
+        w.block = normalizeBlockValue(w.season || "");
+        w.season = "";
+      }
+      w.block = normalizeBlockValue(w.block);
+      if (!w.block) w.block = "Base";
+      getWeekSessions(w);
+    });
+  }
+  if (typeof persisted?.selectedWeekIndex === "number") {
+    state.selectedWeekIndex = clamp(persisted.selectedWeekIndex, 0, 51);
+  }
+  if (typeof persisted?.connected === "boolean") {
+    state.connected = persisted.connected;
+  }
+}
+
+function readCloudMeta() {
+  try {
+    const raw = localStorage.getItem(CLOUD_META_KEY);
+    if (!raw) return { updatedAt: null };
+    const parsed = JSON.parse(raw);
+    const updatedAt = Number.isFinite(Number(parsed?.updatedAt)) ? Number(parsed.updatedAt) : null;
+    return { updatedAt };
+  } catch {
+    return { updatedAt: null };
+  }
+}
+
+function writeCloudMeta(meta) {
+  try {
+    const updatedAt = Number.isFinite(Number(meta?.updatedAt)) ? Number(meta.updatedAt) : null;
+    localStorage.setItem(CLOUD_META_KEY, JSON.stringify({ updatedAt }));
+  } catch {}
+}
+
+function coerceEpochMs(value) {
+  const n = Number(value);
+  if (Number.isFinite(n) && n > 0) return n;
+  if (typeof value === "string") {
+    const t = Date.parse(value);
+    if (Number.isFinite(t) && t > 0) return t;
+  }
+  return null;
+}
+
+async function apiJson(path, init) {
+  const res = await fetch(path, { ...(init || {}), credentials: "include" });
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+  if (!res.ok) {
+    const msg = typeof data?.error === "string" ? data.error : `Request failed (${res.status})`;
+    const err = new Error(msg);
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+async function fetchCloudState() {
+  if (!supabaseClient) throw new Error("Supabase not configured");
+  if (!authUser?.id) throw new Error("Not logged in");
+  const { data, error } = await supabaseClient
+    .from(SUPABASE_STATE_TABLE)
+    .select("state_json, updated_at")
+    .eq("user_id", authUser.id)
+    .maybeSingle();
+  if (error) throw new Error(String(error.message || "Cloud fetch failed"));
+
+  const updatedAt = coerceEpochMs(data?.updated_at);
+  const state = data?.state_json && typeof data.state_json === "object" ? data.state_json : null;
+  return { ok: true, state, updatedAt };
+}
+
+async function putCloudState(statePayload) {
+  if (!supabaseClient) throw new Error("Supabase not configured");
+  if (!authUser?.id) throw new Error("Not logged in");
+  const updatedAt = Date.now();
+  const { error } = await supabaseClient
+    .from(SUPABASE_STATE_TABLE)
+    .upsert({ user_id: authUser.id, state_json: statePayload, updated_at: updatedAt }, { onConflict: "user_id" });
+  if (error) throw new Error(String(error.message || "Cloud save failed"));
+  return { ok: true, updatedAt };
+}
+
+function scheduleCloudSave(payload) {
+  if (!authUser) return;
+  try {
+    cloudSavePendingJson = JSON.stringify(payload);
+  } catch {
+    cloudSavePendingJson = "";
+    return;
+  }
+  if (cloudSaveTimer) return;
+  cloudSaveTimer = window.setTimeout(async () => {
+    cloudSaveTimer = null;
+    if (cloudSaveInFlight) return;
+    if (!authUser) return;
+    const nextJson = cloudSavePendingJson;
+    cloudSavePendingJson = "";
+    if (!nextJson) return;
+    cloudSaveInFlight = true;
+    try {
+      const next = JSON.parse(nextJson);
+      const out = await putCloudState(next);
+      const updatedAt = Number.isFinite(Number(out?.updatedAt)) ? Number(out.updatedAt) : null;
+      if (updatedAt) writeCloudMeta({ updatedAt });
+    } catch (e) {
+      cloudSavePendingJson = nextJson;
+    } finally {
+      cloudSaveInFlight = false;
+      if (cloudSavePendingJson) scheduleCloudSave(JSON.parse(cloudSavePendingJson));
+    }
+  }, 1500);
+}
+
+function buildAuthModal(initialMode) {
+  const overlay = el("div", "overlay overlay--auth");
+  const modal = el("div", "modal modal--auth");
+  const title = el("div", "modal__title", initialMode === "register" ? "註冊" : "登入");
+  const subtitle = el("div", "modal__subtitle", "登入後會把你嘅表格改動保存到雲端，跨裝置都可以繼續用。");
+
+  const closeIcon = svgEl("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "2" });
+  closeIcon.appendChild(svgEl("path", { d: "M6 6l12 12" }));
+  closeIcon.appendChild(svgEl("path", { d: "M18 6L6 18" }));
+  const closeIconBtn = document.createElement("button");
+  closeIconBtn.type = "button";
+  closeIconBtn.className = "iconBtn authModal__close";
+  closeIconBtn.appendChild(closeIcon);
+
+  const header = el("div", "authModal__header");
+  const headerText = el("div", "authModal__headerText");
+  headerText.appendChild(title);
+  headerText.appendChild(subtitle);
+  header.appendChild(headerText);
+  header.appendChild(closeIconBtn);
+
+  const form = el("form", "authForm");
+
+  const providers = el("div", "authProviders");
+  const googleBtn = document.createElement("button");
+  googleBtn.type = "button";
+  googleBtn.className = "btn authProviderBtn authProviderBtn--google";
+  const googleIcon = el("span", "authProviderBtn__icon authProviderBtn__icon--google");
+  const googleIconSvg = svgEl("svg", { viewBox: "0 0 24 24", role: "img", "aria-hidden": "true" });
+  const googleIconText = svgEl("text", {
+    x: "12",
+    y: "16",
+    "text-anchor": "middle",
+    "font-size": "12",
+    "font-weight": "700",
+    "font-family": 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif',
+    fill: "currentColor",
+  });
+  googleIconText.textContent = "G";
+  googleIconSvg.appendChild(googleIconText);
+  googleIcon.appendChild(googleIconSvg);
+  const googleLabel = el("span", "authProviderBtn__label", "用 Google 登入");
+  googleBtn.appendChild(googleIcon);
+  googleBtn.appendChild(googleLabel);
+
+  const emailChoiceBtn = document.createElement("button");
+  emailChoiceBtn.type = "button";
+  emailChoiceBtn.className = "btn authProviderBtn authProviderBtn--email";
+  const emailIcon = el("span", "authProviderBtn__icon authProviderBtn__icon--email");
+  const emailIconSvg = svgEl("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "2" });
+  emailIconSvg.appendChild(svgEl("path", { d: "M4 7h16v10H4z" }));
+  emailIconSvg.appendChild(svgEl("path", { d: "M4 7l8 6 8-6" }));
+  emailIcon.appendChild(emailIconSvg);
+  const emailChoiceLabel = el("span", "authProviderBtn__label", "用電郵登入");
+  emailChoiceBtn.appendChild(emailIcon);
+  emailChoiceBtn.appendChild(emailChoiceLabel);
+
+  providers.appendChild(googleBtn);
+  providers.appendChild(emailChoiceBtn);
+
+  const divider = el("div", "authDivider", "或");
+
+  const emailSection = el("div", "authEmail");
+  emailSection.hidden = true;
+  const backBtn = el("button", "btn authBackBtn", "返回");
+  backBtn.type = "button";
+
+  const emailRow = el("label", "authField");
+  emailRow.appendChild(el("span", "authField__label", "Email"));
+  const emailInput = document.createElement("input");
+  emailInput.className = "input authInput";
+  emailInput.type = "email";
+  emailInput.autocomplete = "email";
+  emailInput.placeholder = "name@example.com";
+  emailRow.appendChild(emailInput);
+
+  const passRow = el("label", "authField");
+  passRow.appendChild(el("span", "authField__label", "密碼"));
+  const passInput = document.createElement("input");
+  passInput.className = "input authInput";
+  passInput.type = "password";
+  passInput.autocomplete = initialMode === "register" ? "new-password" : "current-password";
+  passInput.placeholder = "至少 8 個字元";
+  passRow.appendChild(passInput);
+
+  const switchBtn = el("button", "btn authLinkBtn", initialMode === "register" ? "已有帳號？登入" : "未有帳號？註冊");
+  switchBtn.type = "button";
+
+  const submitBtn = el("button", "btn btn--primary authSubmitBtn", initialMode === "register" ? "建立帳號" : "登入");
+  submitBtn.type = "submit";
+
+  const actions = el("div", "authActions");
+  actions.appendChild(submitBtn);
+
+  const footer = el("div", "authFooter");
+  footer.appendChild(switchBtn);
+
+  emailSection.appendChild(backBtn);
+  emailSection.appendChild(emailRow);
+  emailSection.appendChild(passRow);
+  emailSection.appendChild(actions);
+
+  form.appendChild(providers);
+  form.appendChild(divider);
+  form.appendChild(emailSection);
+  form.appendChild(footer);
+
+  modal.appendChild(header);
+  modal.appendChild(form);
+  overlay.appendChild(modal);
+
+  const setMode = (mode) => {
+    title.textContent = mode === "register" ? "註冊" : "登入";
+    switchBtn.textContent = mode === "register" ? "已有帳號？登入" : "未有帳號？註冊";
+    submitBtn.textContent = mode === "register" ? "建立帳號" : "登入";
+    emailChoiceLabel.textContent = mode === "register" ? "用電郵註冊" : "用電郵登入";
+    passInput.autocomplete = mode === "register" ? "new-password" : "current-password";
+    form.dataset.mode = mode;
+  };
+
+  setMode(initialMode === "register" ? "register" : "login");
+
+  closeIconBtn.addEventListener("click", () => overlay.remove());
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+  switchBtn.addEventListener("click", () => setMode(form.dataset.mode === "register" ? "login" : "register"));
+
+  const redirectTo = () => String(window.location.href || "").split("#")[0];
+
+  googleBtn.addEventListener("click", async () => {
+    if (!supabaseClient) {
+      showToast("未設定 Supabase（請填入 SUPABASE_URL / SUPABASE_ANON_KEY）", { variant: "warn", durationMs: 2200 });
+      return;
+    }
+    googleBtn.disabled = true;
+    try {
+      const { error } = await supabaseClient.auth.signInWithOAuth({ provider: "google", options: { redirectTo: redirectTo() } });
+      if (error) throw new Error(error.message);
+    } catch (err) {
+      googleBtn.disabled = false;
+      showToast(String(err?.message || "登入失敗"), { variant: "warn", durationMs: 2200 });
+    }
+  });
+
+  const openEmail = () => {
+    providers.hidden = true;
+    divider.hidden = true;
+    emailSection.hidden = false;
+    window.setTimeout(() => emailInput.focus(), 0);
+  };
+
+  const closeEmail = () => {
+    providers.hidden = false;
+    divider.hidden = false;
+    emailSection.hidden = true;
+    window.setTimeout(() => emailChoiceBtn.focus(), 0);
+  };
+
+  emailChoiceBtn.addEventListener("click", () => openEmail());
+  backBtn.addEventListener("click", () => closeEmail());
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const mode = form.dataset.mode === "register" ? "register" : "login";
+    const email = String(emailInput.value || "").trim();
+    const password = String(passInput.value || "");
+    if (!email || !password) {
+      showToast("請輸入 Email 同密碼", { variant: "warn", durationMs: 1600 });
+      return;
+    }
+    submitBtn.disabled = true;
+    switchBtn.disabled = true;
+    backBtn.disabled = true;
+    googleBtn.disabled = true;
+    emailChoiceBtn.disabled = true;
+    closeIconBtn.disabled = true;
+    try {
+      if (!supabaseClient) throw new Error("未設定 Supabase");
+
+      if (mode === "register") {
+        const { error } = await supabaseClient.auth.signUp({ email, password, options: { emailRedirectTo: redirectTo() } });
+        if (error) throw new Error(error.message);
+        overlay.remove();
+        syncAuthUi();
+        showToast("已建立帳號（如需驗證電郵，請到收件匣確認）");
+        return;
+      }
+
+      const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      if (error) throw new Error(error.message);
+      const { data } = await supabaseClient.auth.getSession();
+      const user = data?.session?.user || null;
+      authUser = user ? { id: user.id, email: user.email || email } : null;
+      overlay.remove();
+      syncAuthUi();
+      if (authUser) await afterLoginSync();
+      showToast("已登入");
+    } catch (err) {
+      showToast(String(err?.message || "登入失敗"), { variant: "warn", durationMs: 2200 });
+    } finally {
+      submitBtn.disabled = false;
+      switchBtn.disabled = false;
+      backBtn.disabled = false;
+      googleBtn.disabled = false;
+      emailChoiceBtn.disabled = false;
+      closeIconBtn.disabled = false;
+    }
+  });
+
+  window.setTimeout(() => emailChoiceBtn.focus(), 0);
+  return overlay;
+}
+
+function syncAuthUi() {
+  const btn = document.getElementById("authBtn");
+  if (!btn) return;
+  btn.textContent = authUser ? "登出" : "登入";
+}
+
+async function afterLoginSync() {
+  let remote = null;
+  try {
+    remote = await fetchCloudState();
+  } catch {
+    remote = null;
+  }
+
+  const remoteState = remote?.state;
+  const remoteUpdatedAt = Number.isFinite(Number(remote?.updatedAt)) ? Number(remote.updatedAt) : null;
+  const meta = readCloudMeta();
+  const local = loadPersistedState();
+
+  if (remoteState && remoteUpdatedAt && (!meta.updatedAt || remoteUpdatedAt > meta.updatedAt)) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteState));
+      writeCloudMeta({ updatedAt: remoteUpdatedAt });
+      window.location.reload();
+      return;
+    } catch {}
+  }
+
+  if (!remoteState && local) {
+    try {
+      const out = await putCloudState(local);
+      const updatedAt = Number.isFinite(Number(out?.updatedAt)) ? Number(out.updatedAt) : null;
+      if (updatedAt) writeCloudMeta({ updatedAt });
+    } catch {}
+  }
+}
+
+async function wireAuth() {
+  const btn = document.getElementById("authBtn");
+  if (!btn) return;
+
+  let lastSyncedUserId = "";
+  const runAfterLoginSyncForCurrentUser = async () => {
+    const uid = String(authUser?.id || "");
+    if (!uid) return;
+    if (uid === lastSyncedUserId) return;
+    lastSyncedUserId = uid;
+    await afterLoginSync();
+  };
+
+  btn.addEventListener("click", async () => {
+    if (authUser) {
+      if (supabaseClient) {
+        try {
+          const { error } = await supabaseClient.auth.signOut();
+          if (error) throw new Error(error.message);
+        } catch {}
+      }
+      authUser = null;
+      if (cloudSaveTimer) window.clearTimeout(cloudSaveTimer);
+      cloudSaveTimer = null;
+      cloudSavePendingJson = "";
+      cloudSaveInFlight = false;
+      clearPersistedTrainingState();
+      lastSyncedUserId = "";
+      syncAuthUi();
+      showToast("已登出");
+      return;
+    }
+    if (!supabaseClient) {
+      showToast("未設定 Supabase（請填入 SUPABASE_URL / SUPABASE_ANON_KEY）", { variant: "warn", durationMs: 2400 });
+      return;
+    }
+    const overlay = buildAuthModal("login");
+    document.body.appendChild(overlay);
+  });
+
+  if (supabaseClient) {
+    try {
+      const { data } = await supabaseClient.auth.getSession();
+      const user = data?.session?.user || null;
+      authUser = user ? { id: user.id, email: user.email || "" } : null;
+    } catch {
+      authUser = null;
+    }
+
+    supabaseClient.auth.onAuthStateChange(async (_event, session) => {
+      const user = session?.user || null;
+      const next = user ? { id: user.id, email: user.email || "" } : null;
+      const wasIn = Boolean(authUser);
+      authUser = next;
+      syncAuthUi();
+      if (!authUser) {
+        if (cloudSaveTimer) window.clearTimeout(cloudSaveTimer);
+        cloudSaveTimer = null;
+        cloudSavePendingJson = "";
+        cloudSaveInFlight = false;
+        clearPersistedTrainingState();
+        lastSyncedUserId = "";
+        return;
+      }
+      if (!wasIn) await runAfterLoginSyncForCurrentUser();
+    });
+  } else {
+    authUser = null;
+  }
+
+  syncAuthUi();
+  if (authUser) await runAfterLoginSyncForCurrentUser();
 }
 
 const state = {
@@ -3858,77 +4384,10 @@ function wireButtons() {
   });
 }
 
-function init() {
-  const persisted = loadPersistedState();
-  const persistedStartDate = parseYMD(persisted?.startDate);
-  if (persistedStartDate) {
-    state.startDate = startOfMonday(persistedStartDate);
-  }
-  state.ytdVolumeHrs = Number.isFinite(persisted?.ytdVolumeHrs) ? persisted.ytdVolumeHrs : null;
-  state.annualVolumeSettings =
-    persisted?.annualVolumeSettings && typeof persisted.annualVolumeSettings === "object"
-      ? {
-          startWeeklyHrs: Number.isFinite(Number(persisted.annualVolumeSettings.startWeeklyHrs)) ? Number(persisted.annualVolumeSettings.startWeeklyHrs) : null,
-          maxUpPct: Number.isFinite(Number(persisted.annualVolumeSettings.maxUpPct)) ? Number(persisted.annualVolumeSettings.maxUpPct) : 12,
-          maxDownPct: Number.isFinite(Number(persisted.annualVolumeSettings.maxDownPct)) ? Number(persisted.annualVolumeSettings.maxDownPct) : 25,
-        }
-      : { startWeeklyHrs: null, maxUpPct: 12, maxDownPct: 25 };
+async function init() {
+  state.ytdVolumeHrs = null;
+  state.annualVolumeSettings = { startWeeklyHrs: null, maxUpPct: 12, maxDownPct: 25 };
   buildInitialWeeks();
-  if (persisted?.weeks?.length === 52) {
-    const seasonOptions = ["", "Base", "Build", "Peak", "Deload", "Transition"];
-    persisted.weeks.forEach((p, idx) => {
-      const w = state.weeks[idx];
-      if (!w) return;
-      w.priority = typeof p.priority === "string" ? p.priority : "";
-      w.block = typeof p.block === "string" ? normalizeBlockValue(p.block) : w.block;
-      w.season = typeof p.season === "string" ? p.season : "";
-      w.phases = normalizePhases(p?.phases ?? p?.phase);
-      w.volumeHrs = typeof p.volumeHrs === "string" ? p.volumeHrs : "";
-      w.volumeMode = typeof p.volumeMode === "string" ? p.volumeMode : "direct";
-      w.volumeFactor = Number.isFinite(Number(p.volumeFactor)) ? Number(p.volumeFactor) : 1;
-      w.volumeFactorAuto = p.volumeFactorAuto === true;
-      w.sessions = Array.isArray(p.sessions) && p.sessions.length
-        ? p.sessions.map((s, i) => {
-            const next = {
-              dayLabel: normalizeDayLabelZh(s?.dayLabel, i),
-              workoutsCount: Number(s?.workoutsCount) || 0,
-              workouts: Array.isArray(s?.workouts) ? s.workouts.map(normalizeWorkoutEntry) : [],
-              duration: Number(s?.duration) || 0,
-              zone: Number(s?.zone) || 0,
-              rpe: clamp(Number(s?.rpe) || 1, 1, 10),
-              kind: typeof s?.kind === "string" ? s.kind : "Run",
-              note: typeof s?.note === "string" ? s.note : "",
-            };
-            ensureSessionWorkouts(next);
-            return next;
-          })
-        : w.sessions;
-      w.races = Array.isArray(p.races)
-        ? p.races
-            .map((r) => ({
-              name: typeof r?.name === "string" ? r.name : "",
-              date: typeof r?.date === "string" ? r.date : "",
-              distanceKm: Number.isFinite(Number(r?.distanceKm)) && Number(r.distanceKm) > 0 ? Number(r.distanceKm) : null,
-              kind: typeof r?.kind === "string" ? r.kind : "",
-            }))
-            .filter((r) => r.name.trim() && r.date)
-        : [];
-
-      if (!w.block && seasonOptions.includes(w.season || "")) {
-        w.block = normalizeBlockValue(w.season || "");
-        w.season = "";
-      }
-      w.block = normalizeBlockValue(w.block);
-      if (!w.block) w.block = "Base";
-      getWeekSessions(w);
-    });
-  }
-  if (typeof persisted?.selectedWeekIndex === "number") {
-    state.selectedWeekIndex = clamp(persisted.selectedWeekIndex, 0, 51);
-  }
-  if (typeof persisted?.connected === "boolean") {
-    state.connected = persisted.connected;
-  }
   updateHeader();
   wireCalendarSizer();
   renderCalendar();
@@ -3938,6 +4397,21 @@ function init() {
   wireTabs();
   wireHowTo();
   wireButtons();
+  await wireAuth();
+  if (!authUser) {
+    clearPersistedTrainingState();
+  }
+  if (authUser) {
+    const persisted = loadPersistedState();
+    if (persisted) {
+      applyPersistedTrainingState(persisted);
+      updateHeader();
+      renderCalendar();
+      renderWeekPicker();
+      renderWeekDetails();
+      renderCharts();
+    }
+  }
   let initialTab = getTabKeyFromHash();
   if (!initialTab) {
     try {

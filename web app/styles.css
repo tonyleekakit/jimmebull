@@ -109,6 +109,12 @@ body {
   display: block;
 }
 
+.authBtn {
+  height: 32px;
+  padding: 6px 10px;
+  border-radius: 999px;
+}
+
 .brand__text {
   font-family: var(--fontDisplay);
   color: var(--text);
@@ -1233,6 +1239,235 @@ body {
   gap: 10px;
 }
 
+.overlay--auth {
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(10px);
+}
+
+.modal--auth {
+  width: min(420px, 100%);
+  padding: 18px 18px 16px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.94));
+  border-color: var(--border);
+  box-shadow: var(--shadow);
+  gap: 14px;
+}
+
+.modal--auth .modal__title {
+  font-family: var(--fontDisplay);
+  font-size: 15px;
+  letter-spacing: 0.9px;
+  color: var(--text);
+}
+
+.modal--auth .modal__subtitle {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.modal--auth .muted {
+  color: var(--muted);
+}
+
+.authModal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.authModal__headerText {
+  display: grid;
+  gap: 4px;
+}
+
+.authModal__close {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--surface2);
+  border-color: var(--border);
+  box-shadow: none;
+}
+
+.authModal__close:hover {
+  border-color: rgba(22, 163, 74, 0.45);
+  background: rgba(22, 163, 74, 0.08);
+}
+
+.authModal__close svg {
+  width: 16px;
+  height: 16px;
+}
+
+.authForm {
+  display: grid;
+  gap: 12px;
+}
+
+.authProviders {
+  display: grid;
+  gap: 10px;
+}
+
+.authProviderBtn {
+  width: 100%;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+  box-shadow: none;
+}
+
+.authProviderBtn:hover {
+  border-color: rgba(22, 163, 74, 0.45);
+  background: rgba(17, 24, 39, 0.02);
+  box-shadow: 0 0 0 3px var(--ringSoft);
+}
+
+.authProviderBtn:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.authProviderBtn__icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--text);
+  flex: 0 0 auto;
+}
+
+.authProviderBtn__icon svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.authProviderBtn__icon--google svg {
+  width: 14px;
+  height: 14px;
+}
+
+.authProviderBtn__icon--google {
+  background: rgba(255, 255, 255, 0.92);
+  color: rgba(2, 6, 23, 0.9);
+  border: 1px solid rgba(15, 23, 42, 0.1);
+}
+
+.authProviderBtn__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  font-size: 12px;
+  letter-spacing: 0.7px;
+}
+
+.authDivider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.6px;
+}
+
+.authDivider::before,
+.authDivider::after {
+  content: "";
+  height: 1px;
+  flex: 1 1 auto;
+  background: var(--border);
+}
+
+.authEmail {
+  display: grid;
+  gap: 10px;
+}
+
+.authBackBtn {
+  justify-self: start;
+  height: 34px;
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+  box-shadow: none;
+}
+
+.authField {
+  display: grid;
+  gap: 6px;
+}
+
+.authField__label {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.5px;
+}
+
+.modal--auth .input {
+  height: 40px;
+  border-radius: 12px;
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.modal--auth .input::placeholder {
+  color: var(--muted);
+}
+
+.modal--auth .input:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.authActions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+.authFooter {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 2px;
+}
+
+.authLinkBtn {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+  padding: 8px 6px;
+}
+
+.authLinkBtn:hover {
+  background: rgba(17, 24, 39, 0.04);
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.modal--auth .btn--primary {
+  color: rgba(2, 6, 23, 0.92);
+}
+
 .modal--scroll {
   max-height: calc(100vh - 36px);
   overflow-y: auto;
@@ -1443,6 +1678,10 @@ body {
   .brand__img {
     height: 22px;
     max-height: 22px;
+  }
+  .authBtn {
+    height: 28px;
+    padding: 5px 9px;
   }
   .page {
     padding: 14px 12px 22px;
