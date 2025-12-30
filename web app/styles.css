@@ -201,6 +201,24 @@ body {
   border-color: var(--accentHover);
 }
 
+.btn--danger {
+  background: linear-gradient(180deg, #f87171, #dc2626);
+  border-color: #b91c1c;
+  color: rgba(2, 6, 23, 0.92);
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.14), 0 18px 40px rgba(15, 23, 42, 0.18);
+}
+
+.btn--danger:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12), var(--shadow);
+}
+
+.btn--danger:focus-visible {
+  outline: 3px solid rgba(220, 38, 38, 0.3);
+  outline-offset: 2px;
+}
+
 .muted {
   color: var(--muted);
   font-size: 12px;

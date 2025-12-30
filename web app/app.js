@@ -2790,6 +2790,8 @@ function syncAuthUi() {
   const btn = document.getElementById("authBtn");
   if (!btn) return;
   btn.textContent = authUser ? "登出" : "登入";
+  btn.classList.toggle("btn--danger", Boolean(authUser));
+  btn.classList.toggle("btn--primary", !authUser);
 }
 
 async function afterLoginSync() {
