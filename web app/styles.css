@@ -75,12 +75,44 @@ body {
   background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(10px);
   padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .tabs {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex: 1 1 auto;
+}
+
+.brand {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  text-decoration: none;
+  max-width: min(320px, 45vw);
+}
+
+.brand__img {
+  height: 34px;
+  width: auto;
+  object-fit: contain;
+  display: block;
+}
+
+.brand__text {
+  font-family: var(--fontDisplay);
+  color: var(--text);
+  font-size: 14px;
+  letter-spacing: 0.9px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tab {
@@ -1393,6 +1425,9 @@ body {
   }
   .tabs {
     flex-wrap: wrap;
+  }
+  .brand__text {
+    display: none;
   }
 }
 
