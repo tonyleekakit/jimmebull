@@ -624,7 +624,7 @@ function computeCoachPhasesByRules() {
     }
     if (block === "Build") {
       const race = nextTargetRaceByWeek[i];
-      out[i] = phasesForRaceDistance(race?.distanceKm, race?.kind);
+      out[i] = ["Aerobic Endurance", ...phasesForRaceDistance(race?.distanceKm, race?.kind)];
       continue;
     }
     out[i] = [];
@@ -640,10 +640,12 @@ function applyCoachPhaseRules() {
   for (let i = 0; i < 52; i++) {
     const w = state.weeks[i];
     if (!w) continue;
+    if (w.phasesAuto === false) continue;
     const cur = normalizePhases(w.phases);
     const next = normalizePhases(phases[i]);
     if (cur.length !== next.length || cur.some((x, idx) => x !== next[idx])) {
       w.phases = next;
+      w.phasesAuto = true;
       changed = true;
     }
   }
@@ -2369,6 +2371,7 @@ function persistState() {
         block: w.block || "",
         season: w.season || "",
         phases: normalizePhases(w.phases),
+        phasesAuto: w.phasesAuto === false ? false : true,
         volumeHrs: w.volumeHrs || "",
         volumeMode: w.volumeMode || "direct",
         volumeFactor: Number.isFinite(Number(w.volumeFactor)) ? Number(w.volumeFactor) : 1,
@@ -2418,6 +2421,7 @@ function applyPersistedTrainingState(persisted) {
       w.block = typeof p.block === "string" ? normalizeBlockValue(p.block) : w.block;
       w.season = typeof p.season === "string" ? p.season : "";
       w.phases = normalizePhases(p?.phases ?? p?.phase);
+      w.phasesAuto = p?.phasesAuto === false ? false : true;
       w.volumeHrs = typeof p.volumeHrs === "string" ? p.volumeHrs : "";
       w.volumeMode = typeof p.volumeMode === "string" ? p.volumeMode : "direct";
       w.volumeFactor = Number.isFinite(Number(p.volumeFactor)) ? Number(p.volumeFactor) : 1;
@@ -2989,6 +2993,7 @@ function snapshotForHistory() {
       block: w.block || "",
       season: w.season || "",
       phases: normalizePhases(w.phases),
+      phasesAuto: w.phasesAuto === false ? false : true,
       volumeHrs: w.volumeHrs || "",
       volumeMode: w.volumeMode || "direct",
       volumeFactor: Number.isFinite(Number(w.volumeFactor)) ? Number(w.volumeFactor) : 1,
@@ -3035,6 +3040,7 @@ function applyHistorySnapshot(snapshot) {
     w.block = typeof p.block === "string" ? p.block : "";
     w.season = typeof p.season === "string" ? p.season : "";
     w.phases = normalizePhases(p?.phases ?? p?.phase);
+    w.phasesAuto = p?.phasesAuto === false ? false : true;
     w.volumeHrs = typeof p.volumeHrs === "string" ? p.volumeHrs : "";
     w.volumeMode = typeof p.volumeMode === "string" ? p.volumeMode : "direct";
     w.volumeFactor = Number.isFinite(Number(p.volumeFactor)) ? Number(p.volumeFactor) : 1;
@@ -3105,6 +3111,7 @@ function buildInitialWeeks() {
       block: "Base",
       season: "",
       phases: [],
+      phasesAuto: true,
       volumeHrs: "",
       volumeMode: "direct",
       volumeFactor: 1,
@@ -3292,6 +3299,7 @@ function renderCalendar() {
         btn.addEventListener("click", () => {
           pushHistory();
           w.phases = selected ? phases.filter((p) => p !== row.phase) : [...phases, row.phase];
+          w.phasesAuto = false;
           persistState();
           renderCalendar();
           renderCharts();
