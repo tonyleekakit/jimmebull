@@ -2016,8 +2016,8 @@ function renderCharts() {
   const weekSeries = buildWeekSeries();
   const strainSeries = weekSeries.map((w) => Math.max(0, Number(w?.strain) || 0));
   const strainMax = Math.max(1, ...strainSeries);
-  root.appendChild(
-    makeCard(
+  {
+    const card = makeCard(
       "壓力水平",
       renderLineChartSvg(strainSeries, {
         unit: "A.U.",
@@ -2025,8 +2025,15 @@ function renderCharts() {
         yMax: strainMax,
         tooltip: (i, v) => `${weekLabelZh(i + 1)}：${Math.round(v)} A.U.`,
       }),
-    ),
-  );
+    );
+    const tip = el(
+      "div",
+      "chartTip chartTip--warn",
+      "如壓力水平只花一週便由低點飆升至高點，而且異常高於過往水平，即使其他指標正常，亦需注意過度訓練風險！",
+    );
+    card.appendChild(tip);
+    root.appendChild(card);
+  }
   root.appendChild(
     makeCard(
       "體能與疲勞",

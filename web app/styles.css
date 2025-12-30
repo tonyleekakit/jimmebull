@@ -1075,6 +1075,15 @@ body {
   text-transform: none;
 }
 
+.chartTip {
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.chartTip--warn {
+  color: #dc2626;
+}
+
 .howtoIntro__title {
   font-family: var(--fontDisplay);
   font-size: 13px;
