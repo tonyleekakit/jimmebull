@@ -1409,6 +1409,16 @@ body {
   gap: 10px;
 }
 
+.authNotice {
+  border: 1px solid var(--border);
+  background: rgba(15, 23, 42, 0.04);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .authBackBtn {
   justify-self: start;
   height: 34px;

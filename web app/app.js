@@ -2657,6 +2657,9 @@ function buildAuthModal(initialMode) {
   const actions = el("div", "authActions");
   actions.appendChild(submitBtn);
 
+  const notice = el("div", "authNotice");
+  notice.hidden = true;
+
   const footer = el("div", "authFooter");
   footer.appendChild(switchBtn);
 
@@ -2664,6 +2667,7 @@ function buildAuthModal(initialMode) {
   emailSection.appendChild(emailRow);
   emailSection.appendChild(passRow);
   emailSection.appendChild(actions);
+  emailSection.appendChild(notice);
 
   form.appendChild(providers);
   form.appendChild(divider);
@@ -2674,13 +2678,36 @@ function buildAuthModal(initialMode) {
   modal.appendChild(form);
   overlay.appendChild(modal);
 
-  const setMode = (mode) => {
+  let awaitingEmailConfirm = false;
+
+  const syncModeUi = () => {
+    const mode = form.dataset.mode === "register" ? "register" : "login";
     title.textContent = mode === "register" ? "註冊" : "登入";
-    switchBtn.textContent = mode === "register" ? "已有帳號？登入" : "未有帳號？註冊";
-    submitBtn.textContent = mode === "register" ? "建立帳號" : "登入";
+    submitBtn.textContent = awaitingEmailConfirm ? "已發送確認信" : mode === "register" ? "建立帳號" : "登入";
     emailChoiceLabel.textContent = mode === "register" ? "用電郵註冊" : "用電郵登入";
     passInput.autocomplete = mode === "register" ? "new-password" : "current-password";
-    form.dataset.mode = mode;
+    switchBtn.textContent = awaitingEmailConfirm ? "我已確認電郵 → 登入" : mode === "register" ? "已有帳號？登入" : "未有帳號？註冊";
+  };
+
+  const setMode = (mode) => {
+    form.dataset.mode = mode === "register" ? "register" : "login";
+    syncModeUi();
+  };
+
+  const setAwaitingConfirm = (on, targetEmail) => {
+    awaitingEmailConfirm = Boolean(on);
+    notice.hidden = !awaitingEmailConfirm;
+    if (awaitingEmailConfirm) {
+      const e = String(targetEmail || "").trim();
+      notice.textContent = e ? `已發送確認電郵到 ${e}。請到收件匣／垃圾郵件夾確認後，再回到此頁登入。` : "已發送確認電郵。請到收件匣／垃圾郵件夾確認後，再回到此頁登入。";
+      passInput.value = "";
+    } else {
+      notice.textContent = "";
+    }
+    emailInput.disabled = awaitingEmailConfirm;
+    passInput.disabled = awaitingEmailConfirm;
+    submitBtn.disabled = awaitingEmailConfirm;
+    syncModeUi();
   };
 
   setMode(initialMode === "register" ? "register" : "login");
@@ -2689,7 +2716,15 @@ function buildAuthModal(initialMode) {
   overlay.addEventListener("click", (e) => {
     if (e.target === overlay) overlay.remove();
   });
-  switchBtn.addEventListener("click", () => setMode(form.dataset.mode === "register" ? "login" : "register"));
+  switchBtn.addEventListener("click", () => {
+    if (awaitingEmailConfirm) {
+      setAwaitingConfirm(false);
+      setMode("login");
+      window.setTimeout(() => passInput.focus(), 0);
+      return;
+    }
+    setMode(form.dataset.mode === "register" ? "login" : "register");
+  });
 
   const redirectTo = () => {
     try {
@@ -2718,6 +2753,7 @@ function buildAuthModal(initialMode) {
   });
 
   const openEmail = () => {
+    setAwaitingConfirm(false);
     providers.hidden = true;
     divider.hidden = true;
     emailSection.hidden = false;
@@ -2725,6 +2761,7 @@ function buildAuthModal(initialMode) {
   };
 
   const closeEmail = () => {
+    setAwaitingConfirm(false);
     providers.hidden = false;
     divider.hidden = false;
     emailSection.hidden = true;
@@ -2743,6 +2780,7 @@ function buildAuthModal(initialMode) {
       showToast("請輸入 Email 同密碼", { variant: "warn", durationMs: 1600 });
       return;
     }
+    setAwaitingConfirm(false);
     submitBtn.disabled = true;
     switchBtn.disabled = true;
     backBtn.disabled = true;
@@ -2755,9 +2793,8 @@ function buildAuthModal(initialMode) {
       if (mode === "register") {
         const { error } = await supabaseClient.auth.signUp({ email, password, options: { emailRedirectTo: redirectTo() } });
         if (error) throw new Error(error.message);
-        overlay.remove();
-        syncAuthUi();
-        showToast("已建立帳號（如需驗證電郵，請到收件匣確認）");
+        setAwaitingConfirm(true, email);
+        showToast("已發送確認電郵，請到郵箱確認註冊後再登入", { durationMs: 2600 });
         return;
       }
 
@@ -2773,7 +2810,10 @@ function buildAuthModal(initialMode) {
     } catch (err) {
       showToast(String(err?.message || "登入失敗"), { variant: "warn", durationMs: 2200 });
     } finally {
-      submitBtn.disabled = false;
+      const lock = awaitingEmailConfirm;
+      submitBtn.disabled = lock;
+      emailInput.disabled = lock;
+      passInput.disabled = lock;
       switchBtn.disabled = false;
       backBtn.disabled = false;
       googleBtn.disabled = false;
