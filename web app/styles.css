@@ -109,12 +109,6 @@ body {
   display: block;
 }
 
-.authBtn {
-  height: 32px;
-  padding: 6px 10px;
-  border-radius: 999px;
-}
-
 .brand__text {
   font-family: var(--fontDisplay);
   color: var(--text);
@@ -1678,10 +1672,6 @@ body {
   .brand__img {
     height: 22px;
     max-height: 22px;
-  }
-  .authBtn {
-    height: 28px;
-    padding: 5px 9px;
   }
   .page {
     padding: 14px 12px 22px;

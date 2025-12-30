@@ -2229,7 +2229,11 @@ const SUPABASE_URL = String(globalThis?.__SUPABASE__?.url || "").trim();
 const SUPABASE_ANON_KEY = String(globalThis?.__SUPABASE__?.anonKey || "").trim();
 const SUPABASE_STATE_TABLE = "training_state";
 const supabaseClient =
-  SUPABASE_URL && SUPABASE_ANON_KEY && typeof supabase?.createClient === "function" ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+  SUPABASE_URL && SUPABASE_ANON_KEY && typeof supabase?.createClient === "function"
+    ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" },
+      })
+    : null;
 
 let authUser = null;
 let cloudSaveTimer = null;
@@ -2687,7 +2691,16 @@ function buildAuthModal(initialMode) {
   });
   switchBtn.addEventListener("click", () => setMode(form.dataset.mode === "register" ? "login" : "register"));
 
-  const redirectTo = () => String(window.location.href || "").split("#")[0];
+  const redirectTo = () => {
+    try {
+      const u = new URL(String(document.baseURI || window.location.href || ""));
+      u.hash = "";
+      u.search = "";
+      return u.toString();
+    } catch {
+      return String(window.location.href || "").split("#")[0];
+    }
+  };
 
   googleBtn.addEventListener("click", async () => {
     if (!supabaseClient) {
