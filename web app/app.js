@@ -4523,7 +4523,6 @@ async function init() {
       }
     }
     activateTab(initialTab || "plan", { persist: true, updateHash: false });
-    document.documentElement.classList.remove('tab-switching');
   }
   persistState();
 }

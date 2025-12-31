@@ -208,6 +208,39 @@
     </main>
 
     <script>
+      (function() {
+        try {
+          var h = window.location.hash.replace(/^#/, '').trim();
+          if (h) {
+            var tabs = document.querySelectorAll('.tab[data-tab]');
+            var panels = document.querySelectorAll('.tabPanel');
+            var match = false;
+            
+            for (var i = 0; i < panels.length; i++) {
+              if (panels[i].id === 'tab-' + h) {
+                match = true;
+                break;
+              }
+            }
+
+            if (match) {
+              for (var i = 0; i < tabs.length; i++) {
+                var t = tabs[i];
+                if (t.getAttribute('data-tab') === h) t.classList.add('is-active');
+                else t.classList.remove('is-active');
+              }
+              for (var i = 0; i < panels.length; i++) {
+                var p = panels[i];
+                if (p.id === 'tab-' + h) p.classList.add('is-active');
+                else p.classList.remove('is-active');
+              }
+            }
+          }
+        } catch(e) {}
+      })();
+    </script>
+
+    <script>
       globalThis.__SUPABASE__ = {
         url: "https://yonmaiyxjewsdnyvkzvm.supabase.co",
         anonKey: "sb_publishable_JjjPDuMbjhS6NsOiNWn9YQ_5VrjOFqN",
