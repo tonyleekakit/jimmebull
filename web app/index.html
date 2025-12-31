@@ -7,6 +7,19 @@
     <link rel="icon" type="image/png" href="./assets/logo.png" />
     <link rel="apple-touch-icon" href="./assets/logo.png" />
     <link rel="stylesheet" href="./styles.css?v=2.1" />
+    <script>
+      (function() {
+        try {
+          var h = window.location.hash;
+          if (h && h.length > 1 && h !== '#plan') {
+            document.documentElement.classList.add('tab-switching');
+          }
+        } catch(e) {}
+      })();
+    </script>
+    <style>
+      html.tab-switching .tabPanel { display: none !important; }
+    </style>
   </head>
   <body>
     <header class="topbar">
