@@ -149,13 +149,17 @@ function activateTab(nextKey, options) {
 
   tabs.forEach((t) => {
     const k = String(t.getAttribute("data-tab") || "").trim();
-    t.classList.toggle("is-active", k === key);
+    if (k) {
+      t.classList.toggle("is-active", k === key);
+    }
   });
 
-  document.querySelectorAll(".tabPanel").forEach((p) => p.classList.remove("is-active"));
-  const panel = document.getElementById(`tab-${key}`);
-  if (!panel) return; // Exit if panel doesn't exist (e.g. static page)
-  panel.classList.add("is-active");
+  // Only manage panels if we are in the main SPA mode (detected by calendarShell)
+  if (document.getElementById("calendarShell")) {
+    document.querySelectorAll(".tabPanel").forEach((p) => p.classList.remove("is-active"));
+    const panel = document.getElementById(`tab-${key}`);
+    if (panel) panel.classList.add("is-active");
+  }
 
   if (options?.persist) {
     try {
@@ -4509,15 +4513,17 @@ async function init() {
       renderCharts();
     }
   }
-  let initialTab = getTabKeyFromHash();
-  if (!initialTab) {
-    try {
-      initialTab = String(localStorage.getItem(ACTIVE_TAB_KEY) || "");
-    } catch {
-      initialTab = "";
+  if (document.getElementById("calendarShell")) {
+    let initialTab = getTabKeyFromHash();
+    if (!initialTab) {
+      try {
+        initialTab = String(localStorage.getItem(ACTIVE_TAB_KEY) || "");
+      } catch {
+        initialTab = "";
+      }
     }
+    activateTab(initialTab || "plan", { persist: true, updateHash: false });
   }
-  activateTab(initialTab || "plan", { persist: true, updateHash: false });
   persistState();
 }
 
