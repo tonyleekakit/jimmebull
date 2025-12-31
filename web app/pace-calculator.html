@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh-HK">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>跑步配速計算機 (Pace Calculator) - VDOT & 訓練配速 | Training Monitor</title>
+    <meta name="description" content="免費線上跑步配速計算機，基於 Jack Daniels VDOT 跑力系統。輸入比賽成績自動計算 E/M/T/I/R 各強度訓練配速區間，以及預測 5K, 10K, 半馬, 全馬完賽時間。" />
+    <link rel="icon" type="image/png" href="./assets/logo.png" />
+    <link rel="apple-touch-icon" href="./assets/logo.png" />
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      .page-content {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem 1rem;
+      }
+      .seo-text {
+        max-width: 800px;
+        margin: 2rem auto;
+        line-height: 1.8;
+        color: var(--text-main);
+      }
+      .seo-text h2 {
+        margin-top: 2rem;
+        color: var(--primary);
+      }
+      .seo-text ul {
+        padding-left: 1.5rem;
+      }
+      .seo-text li {
+        margin-bottom: 0.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <nav class="tabs" aria-label="主要">
+        <a href="./index.html#plan" class="tab">訓練監控</a>
+        <a href="./index.html#howto" class="tab">如何使用</a>
+        <a href="#" class="tab is-active">配速計算機</a>
+        <a href="./index.html#blog" class="tab">部落格</a>
+      </nav>
+      <a class="brand" href="./index.html#plan" aria-label="返回訓練監控">
+        <img class="brand__img" src="./assets/logo.png" alt="Logo" onerror="this.style.display='none';" />
+      </a>
+      <a href="./index.html" class="btn btn--primary authBtn">登入 / 使用 App</a>
+    </header>
+
+    <main class="page">
+      <div class="page-content">
+        <section class="seo-text" style="text-align: center; margin-bottom: 2rem;">
+          <h1>跑步配速計算機</h1>
+          <p class="muted">科學化計算你的最佳訓練配速與完賽目標</p>
+        </section>
+
+        <!-- Pace Calculator UI (Copied from index.html) -->
+        <section id="tab-pace" class="tabPanel is-active" aria-label="配速計算機" style="display: block;">
+          <div class="paceIntro">
+            <div class="calendarSummary" aria-label="配速計算機說明">
+              <div class="paceIntro__title">配速計算機</div>
+              <div class="muted">輸入測試成績後，系統會推算配速區間與推測完賽時間（VDOT 模型）</div>
+            </div>
+          </div>
+  
+          <div class="paceGrid" aria-label="配速計算機內容">
+            <div class="chartCard" aria-label="輸入測試成績">
+              <div class="chartCard__title">輸入測試成績</div>
+              <div class="paceForm">
+                <label class="paceField">
+                  <span class="muted">測試距離</span>
+                  <select id="paceTestDistance" class="input" aria-label="測試距離"></select>
+                </label>
+                <div class="paceField">
+                  <span class="muted">時間（時:分:秒）</span>
+                  <div class="paceTimeGrid" aria-label="測試時間">
+                    <input id="paceTestHours" class="input paceTimeInput" type="number" inputmode="numeric" min="0" placeholder="時" aria-label="小時" />
+                    <input id="paceTestMinutes" class="input paceTimeInput" type="number" inputmode="numeric" min="0" max="59" placeholder="分" aria-label="分鐘" />
+                    <input id="paceTestSeconds" class="input paceTimeInput" type="number" inputmode="numeric" min="0" max="59" placeholder="秒" aria-label="秒" />
+                  </div>
+                </div>
+                <div class="paceActions">
+                  <button id="paceCalcBtn" class="btn btn--primary" type="button">計算</button>
+                  <button id="paceResetBtn" class="btn" type="button">重設</button>
+                </div>
+                <div id="paceMeta" class="muted" aria-label="測試結果摘要"></div>
+              </div>
+            </div>
+  
+            <div class="chartCard" aria-label="配速區間">
+              <div class="chartCard__title">配速區間</div>
+              <div id="paceZones" class="paceTable" aria-label="配速區間表"></div>
+            </div>
+  
+            <div class="chartCard" aria-label="推測完賽時間">
+              <div class="chartCard__title">推測完賽時間</div>
+              <div id="pacePredictions" class="paceTable" aria-label="推測完賽時間表"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- SEO Content -->
+        <article class="seo-text">
+          <h2>如何使用配速計算機？</h2>
+          <p>
+            這是一個免費的線上跑步配速計算機，基於 Jack Daniels 的 VDOT 跑力系統模型。
+            無論你是準備 5K、10K、半馬 (Half Marathon) 還是全馬 (Marathon)，這款工具都能協助你找到最適合的訓練配速。
+          </p>
+          <ol>
+            <li>在「測試距離」欄位選擇你最近一次全力跑的距離（例如 5公里或 10公里）。</li>
+            <li>輸入該次測試的「時間」（時:分:秒）。</li>
+            <li>點擊「計算」按鈕。</li>
+            <li>系統將即時顯示你的訓練區間與預測成績。</li>
+          </ol>
+
+          <h2>什麼是 VDOT？</h2>
+          <p>
+            VDOT 是由傳奇跑步教練 Jack Daniels 博士提出的「跑力值」概念，用來衡量跑者的有氧能力指標。
+            數值越高，代表你的跑步經濟性與最大攝氧量越好，理論上的競賽成績也越快。
+            透過 VDOT，我們可以將不同距離的比賽成績標準化，用來預測其他距離的表現，並制定精確的訓練強度。
+          </p>
+
+          <h2>訓練區間說明</h2>
+          <ul>
+            <li><strong>Z1 恢復跑 (E Pace)</strong>: 輕鬆跑，建立有氧基礎，幫助身體恢復。適合佔每週跑量的 70-80%。</li>
+            <li><strong>Z2 有氧跑 (M Pace)</strong>: 馬拉松配速，提升有氧耐力與脂肪代謝能力。</li>
+            <li><strong>Z3 節奏跑 (T Pace)</strong>: 乳酸閾值配速，提升身體清除乳酸的能力，是耐力進步的關鍵強度。</li>
+            <li><strong>Z4/Z5 間歇跑 (I Pace)</strong>: 最大攝氧量配速，提升心肺引擎容量與速度耐力。</li>
+            <li><strong>Z6 重複跑 (R Pace)</strong>: 無氧配速，提升跑步經濟性、神經肌肉徵召與速度技巧。</li>
+          </ul>
+
+          <h2>關於 Training Monitor</h2>
+          <p>
+            Training Monitor 是一個專為跑者設計的年度訓練監控工具。除了配速計算機，我們還提供完整的週期化訓練計畫安排、
+            訓練量監控 (ACWR, 單調度) 以及視覺化圖表分析。
+            <a href="./index.html">點擊這裡開始使用完整功能</a>。
+          </p>
+        </article>
+      </div>
+    </main>
+
+    <script>
+      globalThis.__SUPABASE__ = {
+        url: "https://yonmaiyxjewsdnyvkzvm.supabase.co",
+        anonKey: "sb_publishable_JjjPDuMbjhS6NsOiNWn9YQ_5VrjOFqN",
+      };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./app.js?v=4"></script>
+  </body>
+</html>

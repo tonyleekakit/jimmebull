@@ -154,7 +154,8 @@ function activateTab(nextKey, options) {
 
   document.querySelectorAll(".tabPanel").forEach((p) => p.classList.remove("is-active"));
   const panel = document.getElementById(`tab-${key}`);
-  if (panel) panel.classList.add("is-active");
+  if (!panel) return; // Exit if panel doesn't exist (e.g. static page)
+  panel.classList.add("is-active");
 
   if (options?.persist) {
     try {
@@ -167,7 +168,18 @@ function activateTab(nextKey, options) {
     if (window.location.hash !== nextHash) window.location.hash = nextHash;
   }
 
+  // Update Page Title for basic SEO (SPA)
+  const baseTitle = "訓練監控";
+  const titles = {
+    plan: "訓練監控 | 年度訓練計畫",
+    howto: "如何使用 | 訓練監控",
+    pace: "跑步配速計算機 | VDOT 訓練區間計算 | 訓練監控",
+    blog: "部落格 | 跑步科學文章 | 訓練監控"
+  };
+  document.title = titles[key] || baseTitle;
+
   if (key === "charts") renderCharts();
+  if (key === "blog") renderBlog();
 }
 
 function readPaceTestTimeSeconds() {
@@ -3149,6 +3161,8 @@ function updateHeader() {
   const volumeTotalEl = document.getElementById("volumeTotal");
   const plannedVolume52El = document.getElementById("plannedVolume52");
 
+  if (!dateRangeEl && !volumeTotalEl && !plannedVolume52El) return;
+
   const endDate = addDays(state.startDate, 52 * 7 - 1);
   if (dateRangeEl) {
     dateRangeEl.textContent = `${formatMD(state.startDate)} / ${state.startDate.getFullYear()} - ${formatMD(endDate)} / ${endDate.getFullYear()}`;
@@ -3171,6 +3185,7 @@ function updateHeader() {
 
 function renderCalendar() {
   const calendar = document.getElementById("calendar");
+  if (!calendar) return;
   calendar.replaceChildren();
 
   const seasonOptions = ["", "Base", "Build", "Peak", "Deload", "Transition"];
@@ -3780,20 +3795,18 @@ function openPlannedVolumeModal(weekIndex) {
   const syncMode = () => {
     modeDirect.classList.toggle("is-active", mode === "direct");
     modeFormula.classList.toggle("is-active", mode === "formula");
-    
     if (mode === "direct") {
-      row2.style.display = "none"; // Hide "Apply to others"
-      row3.style.display = "grid"; // Show "Direct input"
-      row4.style.display = "none"; // Hide "Factor"
-      row4b.style.display = "none"; // Hide "Preview"
-      
+      row2.style.display = "none";
+      row3.style.display = "grid";
+      row4.style.display = "none";
+      row4b.style.display = "none";
       applyToOthers = false;
       syncToggle();
     } else {
-      row2.style.display = "grid"; // Show "Apply to others"
-      row3.style.display = "none"; // Hide "Direct input"
-      row4.style.display = "grid"; // Show "Factor"
-      row4b.style.display = "grid"; // Show "Preview"
+      row2.style.display = "grid";
+      row3.style.display = "none";
+      row4.style.display = "grid";
+      row4b.style.display = "grid";
     }
 
     if (mode === "formula" && factor && factor.dataset.touched !== "1") {
@@ -4269,6 +4282,7 @@ function wireTabs() {
   tabs.forEach((t) => {
     t.addEventListener("click", () => {
       const key = String(t.getAttribute("data-tab") || "");
+      if (!key) return; // Allow normal navigation for links without data-tab
       activateTab(key, { persist: true, updateHash: true });
     });
   });
@@ -4508,3 +4522,51 @@ async function init() {
 }
 
 init();
+
+const BLOG_POSTS = [
+  {
+    id: "p1",
+    title: "每週跑量應該加多少？10% 加量法為何未必適合你（附更安全做法）",
+    date: "2025-01-01",
+    url: "./blog/how-to-increase-mileage.html",
+    excerpt: "解析每週跑量增幅的風險與更穩陣的做法。固定 10% 並非萬靈丹，根據單調度與 ACWR 的組合調整更安全。",
+    author: "傑哥, 香港中文大學-運動醫學碩士",
+    social: "Instagram/Threads: @kitgordont"
+  },
+];
+
+function renderBlog() {
+  const listRoot = document.getElementById("blogList");
+  if (!listRoot) return;
+
+  listRoot.replaceChildren();
+  BLOG_POSTS.forEach((p) => {
+    // Create an anchor tag for SEO-friendly linking
+    const row = el("a", "blogItem");
+    row.href = p.url;
+    // row.target = "_blank"; // Optional: open in new tab? Better for retention to keep app open.
+    
+    const left = el("div", "blogItem__text", p.title);
+    
+    // Construct meta string
+    const metaParts = [p.date];
+    if (p.author) metaParts.push(p.author);
+    if (p.social) metaParts.push(p.social);
+    const right = el("div", "blogItem__meta", metaParts.join(" · "));
+    
+    // const desc = el("div", "blogItem__excerpt", p.excerpt);
+    
+    row.appendChild(left);
+    row.appendChild(right);
+    // row.appendChild(desc);
+    
+    listRoot.appendChild(row);
+  });
+  
+  // Clean up title if switching back from article view (legacy cleanup)
+  document.title = "訓練監控";
+}
+
+// Legacy functions removed for pure static linking
+function updateBlogUrl(postId) {}
+function checkBlogUrl() {}
