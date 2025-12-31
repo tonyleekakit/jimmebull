@@ -1,8 +1,8 @@
 :root {
   /* Color Palette - Modern & Clean (Green Theme) */
-  --primary: #16a34a;       /* Green 600 */
-  --primary-hover: #15803d; /* Green 700 */
-  --accent: #84cc84;        /* highlightfrghlights
+  --primary: #15803d;       /* Green 700 - Darker Green for better contrast */
+  --primary-hover: #14532d; /* Green 900 */
+  --accent: #15803d;        /* Match Primary */
   
   --bg: #ffffff;
   --bg-alt: #f8fafc;        /* Light Gray Blue for sections */
