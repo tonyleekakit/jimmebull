@@ -4533,7 +4533,7 @@ const BLOG_POSTS = [
   {
     id: "p1",
     title: "每週跑量應該加多少？10% 加量法為何未必適合你（附更安全做法）",
-    date: "2025-01-01",
+    date: "2026-01-01",
     url: "./blog/how-to-increase-mileage.html",
     excerpt: "解析每週跑量增幅的風險與更穩陣的做法。固定 10% 並非萬靈丹，根據單調度與 ACWR 的組合調整更安全。",
     author: "傑哥, 香港中文大學-運動醫學碩士",
