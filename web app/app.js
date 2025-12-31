@@ -3780,9 +3780,22 @@ function openPlannedVolumeModal(weekIndex) {
   const syncMode = () => {
     modeDirect.classList.toggle("is-active", mode === "direct");
     modeFormula.classList.toggle("is-active", mode === "formula");
-    row3.hidden = mode !== "direct";
-    row4.hidden = mode !== "formula";
-    row4b.hidden = mode !== "formula";
+    
+    if (mode === "direct") {
+      row2.style.display = "none"; // Hide "Apply to others"
+      row3.style.display = "grid"; // Show "Direct input"
+      row4.style.display = "none"; // Hide "Factor"
+      row4b.style.display = "none"; // Hide "Preview"
+      
+      applyToOthers = false;
+      syncToggle();
+    } else {
+      row2.style.display = "grid"; // Show "Apply to others"
+      row3.style.display = "none"; // Hide "Direct input"
+      row4.style.display = "grid"; // Show "Factor"
+      row4b.style.display = "grid"; // Show "Preview"
+    }
+
     if (mode === "formula" && factor && factor.dataset.touched !== "1") {
       const v = defaultFactorForThisWeek();
       factor.value = Number.isFinite(v) ? String(Math.round(v * 100) / 100) : "1.00";
