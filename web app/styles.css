@@ -2,7 +2,7 @@
   /* Color Palette - Modern & Clean (Green Theme) */
   --primary: #16a34a;       /* Green 600 */
   --primary-hover: #15803d; /* Green 700 */
-  --accent: #84cc16;        /* Lime 500 for highlights */
+  --accent: #84cc84;        /* highlightfrghlights
   
   --bg: #ffffff;
   --bg-alt: #f8fafc;        /* Light Gray Blue for sections */
@@ -167,6 +167,7 @@ p {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background-color: var(--bg);
+  color: var(--primary);
   transition: border-color 0.2s;
 }
 
@@ -975,7 +976,8 @@ p {
   font-size: 12px;
   font-weight: 400;
   margin-bottom: 0;
-  letter-spacing: 0.8px;
+  letter-spacing: 0.8p;
+  color: var(--primary)x;
   text-transform: none;
 }
 
