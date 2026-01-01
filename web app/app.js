@@ -4563,15 +4563,7 @@ const BLOG_POSTS = [
     excerpt: "解析每週跑量增幅的風險與更穩陣的做法。固定 10% 並非萬靈丹，根據單調度與 ACWR 的組合調整更安全。",
     author: "傑哥, 香港中文大學-運動醫學碩士",
     social: "Instagram/Threads: @kitgordont"
-  {
-    id: "p2",
-    title: "沒有教練也能變強：Borg RPE 體感強度量表實戰教學（附網站自動計算負荷）",
-    date: "2026-01-02",
-    url: "./blog/borg-rpe-scale-guide.html",
-    excerpt: "不用昂貴手錶或教練，RPE 體感量表是最有效的監控工具。學會如何用體感評估強度，並利用網站工具自動計算訓練負荷。",
-    author: "傑哥, 香港中文大學-運動醫學碩士",
-    social: "Instagram/Threads: @kitgordont"
-  },
+  }
 ];
 
 function renderBlog() {
