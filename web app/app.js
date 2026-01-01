@@ -4321,7 +4321,6 @@ function wireButtons() {
   const annualVolumeInput = document.getElementById("annualVolumeInput");
   const annualVolumeApplyBtn = document.getElementById("annualVolumeApplyBtn");
   const annualVolumeClearBtn = document.getElementById("annualVolumeClearBtn");
-  const autoFillWeekBtn = document.getElementById("autoFillWeekBtn");
   const autoFillAllBtn = document.getElementById("autoFillAllBtn");
   if (annualVolumeInput) {
     annualVolumeInput.value = Number.isFinite(state.ytdVolumeHrs) && state.ytdVolumeHrs > 0 ? String(state.ytdVolumeHrs) : "";
