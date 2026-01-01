@@ -4385,6 +4385,56 @@ function wireButtons() {
     });
   }
 
+  const resetWeekBtn = document.getElementById("resetWeekBtn");
+  if (resetWeekBtn) {
+    resetWeekBtn.addEventListener("click", () => {
+      const ok = window.confirm("確定要重設本週課表？此操作會清除本週的每日課表內容。");
+      if (!ok) return;
+      pushHistory();
+      const w = state.weeks[state.selectedWeekIndex];
+      if (w) {
+        if (!Array.isArray(w.sessions)) w.sessions = getWeekSessions(w);
+        w.sessions.forEach((s) => {
+          s.workoutsCount = 1;
+          s.workouts = [{ duration: 0, rpe: 1 }];
+          s.note = "";
+        });
+      }
+      persistState();
+      updateHeader();
+      renderCalendar();
+      renderCharts();
+      renderWeekDetails();
+      showToast("已重設本週課表");
+    });
+  }
+
+  const reset52WeeksBtn = document.getElementById("reset52WeeksBtn");
+  if (reset52WeeksBtn) {
+    reset52WeeksBtn.addEventListener("click", () => {
+      const ok = window.confirm("確定要重設 52 週課表？此操作會清除所有週的每日課表內容。");
+      if (!ok) return;
+      pushHistory();
+      for (let i = 0; i < 52; i++) {
+        const w = state.weeks[i];
+        if (w) {
+          if (!Array.isArray(w.sessions)) w.sessions = getWeekSessions(w);
+          w.sessions.forEach((s) => {
+            s.workoutsCount = 1;
+            s.workouts = [{ duration: 0, rpe: 1 }];
+            s.note = "";
+          });
+        }
+      }
+      persistState();
+      updateHeader();
+      renderCalendar();
+      renderCharts();
+      renderWeekDetails();
+      showToast("已重設 52 週課表");
+    });
+  }
+
   const raceInputBtn = document.getElementById("raceInputBtn");
   if (raceInputBtn) {
     raceInputBtn.addEventListener("click", () => openRaceInputModal());
