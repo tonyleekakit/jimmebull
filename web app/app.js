@@ -4364,7 +4364,7 @@ function wireButtons() {
 
   if (autoFillAllBtn) {
     autoFillAllBtn.addEventListener("click", () => {
-      const ok = window.confirm("確定要自動填充 52 週課表？此操作會覆蓋現有每日課表內容。");
+      const ok = window.confirm("確定要自動填充範例課表？此操作會覆蓋現有每日課表內容。");
       if (!ok) return;
       pushHistory();
       let changed = 0;
