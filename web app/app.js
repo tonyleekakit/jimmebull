@@ -4363,30 +4363,6 @@ function wireButtons() {
     });
   }
 
-  if (autoFillWeekBtn) {
-    autoFillWeekBtn.addEventListener("click", () => {
-      const w = state.weeks[state.selectedWeekIndex];
-      if (!w) return;
-      const hasVolume = Number(w.volumeHrs) > 0;
-      if (!hasVolume) {
-        showToast("請先設定本週訓練量（小時）", { variant: "warn", durationMs: 1800 });
-        return;
-      }
-      pushHistory();
-      const out = applyAutoSessionsForWeek(state.selectedWeekIndex);
-      if (!out.ok) {
-        showToast("未能自動填充本週課表", { variant: "warn", durationMs: 1800 });
-        return;
-      }
-      persistState();
-      updateHeader();
-      renderCalendar();
-      renderCharts();
-      renderWeekDetails();
-      showToast("已自動填充本週課表");
-    });
-  }
-
   if (autoFillAllBtn) {
     autoFillAllBtn.addEventListener("click", () => {
       const ok = window.confirm("確定要自動填充 52 週課表？此操作會覆蓋現有每日課表內容。");
