@@ -276,6 +276,43 @@ function openWorkoutHelperModal(session, onImport) {
       noteText = `熱身 10-15 分鐘\n${sets} x ${repStr} 間歇, 休息 ${restStr}\n緩和 10-15 分鐘`;
     }
 
+    // Add VDOT distance info if available
+    if (typeof state !== "undefined" && Number.isFinite(state.vdot) && ["tempo", "threshold", "vo2max", "anaerobic"].includes(zoneKey)) {
+      const vdot = state.vdot;
+      const zoneRanges = {
+        tempo: { lo: 0.78, hi: 0.86, mid: 0.82 },
+        threshold: { lo: 0.86, hi: 0.92, mid: 0.89 },
+        vo2max: { lo: 0.92, hi: 0.99, mid: 0.955 },
+        anaerobic: { lo: 0.99, hi: 1.06, mid: 1.025 }
+      };
+      const z = zoneRanges[zoneKey];
+      if (z) {
+        const paceSlow = paceSecondsPerKmFromVdotFraction(vdot, z.lo);
+        const paceFast = paceSecondsPerKmFromVdotFraction(vdot, z.hi);
+        if (Number.isFinite(paceSlow) && Number.isFinite(paceFast)) {
+          const p1 = formatPaceFromSecondsPerKm(Math.max(paceSlow, paceFast));
+          const p2 = formatPaceFromSecondsPerKm(Math.min(paceSlow, paceFast));
+          const rangeStr = `${p1}-${p2}`;
+          
+          const midPace = paceSecondsPerKmFromVdotFraction(vdot, z.mid);
+          if (Number.isFinite(midPace) && midPace > 0) {
+            const speedMetersPerMin = 1000 / (midPace / 60);
+            const estMeters = repDur * speedMetersPerMin;
+            const trackDists = [100, 200, 300, 400, 600, 800, 1000, 1200, 1500, 1600, 2000, 3000, 4000, 5000, 6000, 8000, 10000];
+            const closest = trackDists.reduce((prev, curr) => Math.abs(curr - estMeters) < Math.abs(prev - estMeters) ? curr : prev);
+            
+            if (config.type === "continuous") {
+              noteText = `${config.label.split(" ")[0]} ${repDur} 分鐘 (約 ${closest}m @ ${rangeStr}/km)`;
+            } else {
+              const repStr = formatDuration(repDur);
+              const restStr = formatDuration(rest);
+              noteText = `熱身 10-15 分鐘\n${sets} x ${repStr} 間歇 (約 ${closest}m @ ${rangeStr}/km), 休息 ${restStr}\n緩和 10-15 分鐘`;
+            }
+          }
+        }
+      }
+    }
+
     lockScrollPosition(() => {
       pushHistory();
       
