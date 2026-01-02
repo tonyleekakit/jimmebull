@@ -3555,11 +3555,21 @@ function updateHeader() {
       text = `計劃訓練量（52週）：${totalHrs ? totalHrs.toFixed(1) : "—"} 小時`;
     }
     
-    if (authUser && Number.isFinite(state.vdot)) {
-      text += ` · VDOT: ${state.vdot.toFixed(1)}`;
+    plannedVolume52El.textContent = "";
+    plannedVolume52El.appendChild(document.createTextNode(text));
+
+    if (authUser) {
+      plannedVolume52El.appendChild(document.createTextNode(" · VDOT: "));
+      if (Number.isFinite(state.vdot)) {
+        plannedVolume52El.appendChild(document.createTextNode(state.vdot.toFixed(1)));
+      } else {
+        const warn = document.createElement("span");
+        warn.style.color = "#ef4444";
+        warn.style.fontWeight = "bold";
+        warn.textContent = "未設定";
+        plannedVolume52El.appendChild(warn);
+      }
     }
-    
-    plannedVolume52El.textContent = text;
   }
 }
 
