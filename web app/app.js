@@ -3277,6 +3277,7 @@ async function wireAuth() {
       const wasIn = Boolean(authUser);
       authUser = next;
       syncAuthUi();
+      updateHeader();
       if (!authUser) {
         if (cloudSaveTimer) window.clearTimeout(cloudSaveTimer);
         cloudSaveTimer = null;
