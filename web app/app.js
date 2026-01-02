@@ -3992,7 +3992,8 @@ function renderWeekDetails() {
     helperBtn.textContent = "課表小助手";
     helperBtn.addEventListener("click", () => {
       if (!authUser) {
-        buildAuthModal("login");
+        const overlay = buildAuthModal("login");
+        document.body.appendChild(overlay);
         return;
       }
       openWorkoutHelperModal(s, () => {
