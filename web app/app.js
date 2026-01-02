@@ -3991,6 +3991,10 @@ function renderWeekDetails() {
     helperBtn.style.fontSize = "12px";
     helperBtn.textContent = "課表小助手";
     helperBtn.addEventListener("click", () => {
+      if (!authUser) {
+        buildAuthModal("login");
+        return;
+      }
       openWorkoutHelperModal(s, () => {
         ensureSessionWorkouts(s);
         persistState();
