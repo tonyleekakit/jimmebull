@@ -668,14 +668,15 @@ function computeAndRenderPaceCalculator() {
   renderPaceTable(predsRoot, predRows);
 
   if (authUser && Number.isFinite(vdot)) {
-    setTimeout(() => {
-      if (confirm(`計算完成！VDOT 為 ${vdot.toFixed(1)}。\n是否將此數值儲存為您的個人 VDOT？`)) {
-        state.vdot = vdot;
-        persistState();
-        showToast("已更新您的 VDOT 設定", { variant: "success" });
-      }
-    }, 50);
-  }
+      setTimeout(() => {
+        if (confirm(`計算完成！VDOT 為 ${vdot.toFixed(1)}。\n是否將此數值儲存為您的個人 VDOT？`)) {
+          state.vdot = vdot;
+          persistState();
+          updateHeader();
+          showToast("已更新您的 VDOT 設定", { variant: "success" });
+        }
+      }, 50);
+    }
 }
 
 function resetPaceCalculator() {
@@ -2597,6 +2598,11 @@ function clearPersistedTrainingState() {
   try {
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(CLOUD_META_KEY);
+    state.ytdVolumeHrs = null;
+    state.vdot = null;
+    state.weeks = [];
+    buildInitialWeeks();
+    state.annualVolumeSettings = { startWeeklyHrs: null, maxUpPct: 12, maxDownPct: 25 };
   } catch {}
 }
 
