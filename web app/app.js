@@ -666,6 +666,16 @@ function computeAndRenderPaceCalculator() {
     return { label: d.label, value: `${formatHms(sec)}（${formatPaceFromSecondsPerKm(pace)} / 公里）` };
   });
   renderPaceTable(predsRoot, predRows);
+
+  if (authUser && Number.isFinite(vdot)) {
+    setTimeout(() => {
+      if (confirm(`計算完成！VDOT 為 ${vdot.toFixed(1)}。\n是否將此數值儲存為您的個人 VDOT？`)) {
+        state.vdot = vdot;
+        persistState();
+        showToast("已更新您的 VDOT 設定", { variant: "success" });
+      }
+    }, 50);
+  }
 }
 
 function resetPaceCalculator() {
@@ -2693,6 +2703,7 @@ function persistState() {
     const payload = {
       startDate: formatYMD(state.startDate),
       ytdVolumeHrs: Number.isFinite(state.ytdVolumeHrs) ? state.ytdVolumeHrs : null,
+      vdot: Number.isFinite(state.vdot) ? state.vdot : null,
       weeks: state.weeks.map((w) => ({
         races: Array.isArray(w.races) ? w.races : [],
         priority: w.priority || "",
@@ -2731,6 +2742,7 @@ function applyPersistedTrainingState(persisted) {
     state.startDate = startOfMonday(persistedStartDate);
   }
   state.ytdVolumeHrs = Number.isFinite(persisted?.ytdVolumeHrs) ? persisted.ytdVolumeHrs : null;
+  state.vdot = Number.isFinite(persisted?.vdot) ? persisted.vdot : null;
   state.annualVolumeSettings =
     persisted?.annualVolumeSettings && typeof persisted.annualVolumeSettings === "object"
       ? {
@@ -3282,6 +3294,7 @@ const state = {
   connected: false,
   startDate: startOfMonday(new Date("2025-03-03T00:00:00")),
   ytdVolumeHrs: null,
+  vdot: null,
   weeks: [],
   selectedWeekIndex: 0,
 };
