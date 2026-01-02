@@ -121,7 +121,7 @@ const WORKOUT_HELPER_CONFIG = {
     rpeText: "3-4",
     type: "continuous",
     durationMin: 60,
-    durationStep: 15,
+    durationStep: 5,
     durationMax: 180
   },
   tempo: {
@@ -138,7 +138,9 @@ const WORKOUT_HELPER_CONFIG = {
     rpe: 7,
     rpeText: "7-8",
     type: "interval",
-    repOptions: [6, 8, 10, 12],
+    durationMin: 6,
+    durationMax: 12,
+    durationStep: 0.5,
     setsOptions: [3, 4, 5],
     restRatio: 0.25,
     restText: "跑休 4:1"
@@ -148,7 +150,9 @@ const WORKOUT_HELPER_CONFIG = {
     rpe: 9,
     rpeText: "8-9",
     type: "interval",
-    repOptions: [1, 2, 3, 4, 5],
+    durationMin: 1,
+    durationMax: 5,
+    durationStep: 0.25,
     minTotal: 5,
     maxTotal: 15,
     restRatios: [1, 0.5],
@@ -159,7 +163,9 @@ const WORKOUT_HELPER_CONFIG = {
     rpe: 10,
     rpeText: "9-10",
     type: "interval",
-    repOptions: [0.5, 0.75, 1],
+    durationMin: 0.5,
+    durationMax: 1,
+    durationStep: 5 / 60,
     minTotal: 5,
     maxTotal: 15,
     restRatio: 1,
@@ -168,6 +174,13 @@ const WORKOUT_HELPER_CONFIG = {
 };
 
 function openWorkoutHelperModal(session, onImport) {
+  const formatDuration = (m) => {
+    if (m < 1) return `${Math.round(m * 60)} 秒`;
+    const mins = Math.floor(m);
+    const secs = Math.round((m - mins) * 60);
+    return secs === 0 ? `${mins} 分鐘` : `${mins} 分 ${secs} 秒`;
+  };
+
   // Use existing modal structure styles (modal--auth, authForm, etc.)
   const overlay = el("div", "overlay");
   const modal = el("div", "modal modal--auth");
@@ -258,8 +271,8 @@ function openWorkoutHelperModal(session, onImport) {
     } else {
       totalDuration = Math.round((repDur + rest) * sets);
       
-      const repStr = repDur < 1 ? `${Math.round(repDur * 60)}秒` : `${repDur}分鐘`;
-      const restStr = rest < 1 ? `${Math.round(rest * 60)}秒` : `${rest}分鐘`;
+      const repStr = formatDuration(repDur);
+      const restStr = formatDuration(rest);
       noteText = `熱身 10-15 分鐘\n${sets} x ${repStr} 間歇, 休息 ${restStr}\n緩和 10-15 分鐘`;
     }
 
@@ -317,7 +330,7 @@ function openWorkoutHelperModal(session, onImport) {
       for (let s = start; s <= end; s++) {
         const opt = document.createElement("option");
         opt.value = s;
-        opt.textContent = `${s} 組 (總時長 ${(s * repDur).toFixed(1).replace('.0','')} 分)`;
+        opt.textContent = `${s} 組 (總時長 ${formatDuration(s * repDur)})`;
         setsSelect.appendChild(opt);
       }
     }
@@ -333,16 +346,14 @@ function openWorkoutHelperModal(session, onImport) {
       const restMax = repDur * (config.restRatioMax || config.restRatio);
       
       const rOpt = document.createElement("option");
-      const rText = restMin < 1 ? `${Math.round(restMin * 60)} 秒` : `${restMin} 分鐘`;
       rOpt.value = restMin;
-      rOpt.textContent = `${rText} (${config.restText})`;
+      rOpt.textContent = `${formatDuration(restMin)} (${config.restText})`;
       restSelect.appendChild(rOpt);
 
       if (restMax > restMin) {
         const rOpt2 = document.createElement("option");
-        const rText2 = restMax < 1 ? `${Math.round(restMax * 60)} 秒` : `${restMax} 分鐘`;
         rOpt2.value = restMax;
-        rOpt2.textContent = `${rText2}`;
+        rOpt2.textContent = formatDuration(restMax);
         restSelect.appendChild(rOpt2);
       }
       return;
@@ -354,8 +365,6 @@ function openWorkoutHelperModal(session, onImport) {
       const opt = document.createElement("option");
       opt.value = val;
       
-      const valText = val < 1 ? `${Math.round(val * 60)} 秒` : `${val} 分鐘`;
-      
       let ratioLabel = "";
       if (Math.abs(ratio - 1) < 0.01) ratioLabel = "1:1";
       else if (Math.abs(ratio - 0.5) < 0.01) ratioLabel = "1:0.5";
@@ -364,7 +373,7 @@ function openWorkoutHelperModal(session, onImport) {
       
       const desc = config.restRatios ? `(跑休 ${ratioLabel})` : `(${config.restText})`;
       
-      opt.textContent = `${valText} ${desc}`;
+      opt.textContent = `${formatDuration(val)} ${desc}`;
       restSelect.appendChild(opt);
     });
   };
@@ -377,14 +386,15 @@ function openWorkoutHelperModal(session, onImport) {
     setsSelect.innerHTML = "";
     restSelect.innerHTML = "";
 
+    const step = config.durationStep || 1;
+    for (let m = config.durationMin; m <= config.durationMax + 0.0001; m += step) {
+      const opt = document.createElement("option");
+      opt.value = m;
+      opt.textContent = formatDuration(m);
+      durationSelect.appendChild(opt);
+    }
+
     if (config.type === "continuous") {
-      for (let m = config.durationMin; m <= config.durationMax; m += config.durationStep) {
-        const opt = document.createElement("option");
-        opt.value = m;
-        opt.textContent = `${m} 分鐘`;
-        durationSelect.appendChild(opt);
-      }
-      
       const sOpt = document.createElement("option");
       sOpt.value = "1";
       sOpt.textContent = "1 組";
@@ -400,14 +410,6 @@ function openWorkoutHelperModal(session, onImport) {
     } else {
       setsSelect.disabled = false;
       restSelect.disabled = false;
-
-      config.repOptions.forEach(m => {
-        const opt = document.createElement("option");
-        opt.value = m;
-        opt.textContent = m < 1 ? `${m * 60} 秒` : `${m} 分鐘`;
-        durationSelect.appendChild(opt);
-      });
-
       updateSetsAndRest(config);
     }
   };
