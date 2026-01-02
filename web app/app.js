@@ -3502,13 +3502,20 @@ function updateHeader() {
     volumeTotalEl.textContent = `訓練總量：${totalHrs ? totalHrs.toFixed(1) : "—"} 小時`;
   }
   if (plannedVolume52El) {
+    let text = "";
     if (Number.isFinite(state.ytdVolumeHrs) && state.ytdVolumeHrs > 0) {
       const target = state.ytdVolumeHrs;
       const diff = Math.round((totalHrs - target) * 10) / 10;
-      plannedVolume52El.textContent = `年總訓練量：${target.toFixed(1)} 小時 · 已分配：${totalHrs ? totalHrs.toFixed(1) : "—"} 小時 · 差：${diff.toFixed(1)} 小時`;
+      text = `年總訓練量：${target.toFixed(1)} 小時 · 已分配：${totalHrs ? totalHrs.toFixed(1) : "—"} 小時 · 差：${diff.toFixed(1)} 小時`;
     } else {
-      plannedVolume52El.textContent = `計劃訓練量（52週）：${totalHrs ? totalHrs.toFixed(1) : "—"} 小時`;
+      text = `計劃訓練量（52週）：${totalHrs ? totalHrs.toFixed(1) : "—"} 小時`;
     }
+    
+    if (authUser && Number.isFinite(state.vdot)) {
+      text += ` · VDOT: ${state.vdot.toFixed(1)}`;
+    }
+    
+    plannedVolume52El.textContent = text;
   }
 }
 
