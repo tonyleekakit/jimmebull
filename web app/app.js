@@ -114,6 +114,316 @@ const PACE_TEST_OPTIONS = [
 const ACTIVE_TAB_KEY = "activeTab";
 const HOWTO_SHOT_PREFIX = "howtoShot_v1:";
 
+const WORKOUT_HELPER_CONFIG = {
+  long: {
+    label: "長課 (RPE 3-4)",
+    rpe: 3,
+    rpeText: "3-4",
+    type: "continuous",
+    durationMin: 60,
+    durationStep: 15,
+    durationMax: 180
+  },
+  tempo: {
+    label: "節奏跑 (RPE 5-6)",
+    rpe: 5,
+    rpeText: "5-6",
+    type: "continuous",
+    durationMin: 25,
+    durationStep: 5,
+    durationMax: 60
+  },
+  threshold: {
+    label: "乳酸閾值 (RPE 7-8)",
+    rpe: 7,
+    rpeText: "7-8",
+    type: "interval",
+    repOptions: [6, 8, 10, 12],
+    setsOptions: [3, 4, 5],
+    restRatio: 0.25,
+    restText: "跑休 4:1"
+  },
+  vo2max: {
+    label: "最大攝氧量 (RPE 8-9)",
+    rpe: 9,
+    rpeText: "8-9",
+    type: "interval",
+    repOptions: [1, 2, 3, 4, 5],
+    minTotal: 5,
+    maxTotal: 15,
+    restRatios: [1, 0.5],
+    restText: "跑休 1:1 或 1:0.5"
+  },
+  anaerobic: {
+    label: "無氧耐力 (RPE 9-10)",
+    rpe: 10,
+    rpeText: "9-10",
+    type: "interval",
+    repOptions: [0.5, 0.75, 1],
+    minTotal: 5,
+    maxTotal: 15,
+    restRatio: 1,
+    restText: "跑休 1:1"
+  }
+};
+
+function openWorkoutHelperModal(session, onImport) {
+  // Use existing modal structure styles (modal--auth, authForm, etc.)
+  const overlay = el("div", "overlay");
+  const modal = el("div", "modal modal--auth");
+  
+  // Header
+  const header = el("div", "authModal__header");
+  const headerText = el("div", "authModal__headerText");
+  const title = el("div", "modal__title", "課表小助手");
+  const subtitle = el("div", "modal__subtitle", "自動計算並匯入訓練內容");
+  headerText.appendChild(title);
+  headerText.appendChild(subtitle);
+  
+  // Close Button
+  const closeIcon = svgEl("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "2" });
+  closeIcon.appendChild(svgEl("path", { d: "M6 6l12 12" }));
+  closeIcon.appendChild(svgEl("path", { d: "M18 6L6 18" }));
+  const closeIconBtn = document.createElement("button");
+  closeIconBtn.type = "button";
+  closeIconBtn.className = "iconBtn authModal__close";
+  closeIconBtn.appendChild(closeIcon);
+  closeIconBtn.addEventListener("click", () => overlay.remove());
+
+  header.appendChild(headerText);
+  header.appendChild(closeIconBtn);
+
+  // Form
+  const form = el("div", "authForm"); 
+  
+  // Helper to create row (styled like auth fields)
+  const createRow = (label, input) => {
+    const row = el("label", "authField");
+    const l = el("span", "authField__label", label);
+    row.appendChild(l);
+    input.classList.add("input", "authInput"); 
+    input.style.height = "40px";
+    row.appendChild(input);
+    form.appendChild(row);
+  };
+
+  // 1. Zone Select
+  const zoneSelect = document.createElement("select");
+  Object.keys(WORKOUT_HELPER_CONFIG).forEach(key => {
+    const opt = document.createElement("option");
+    opt.value = key;
+    opt.textContent = WORKOUT_HELPER_CONFIG[key].label;
+    zoneSelect.appendChild(opt);
+  });
+
+  // 2. Duration Select
+  const durationSelect = document.createElement("select");
+
+  // 3. Sets Select
+  const setsSelect = document.createElement("select");
+
+  // 4. Rest Select
+  const restSelect = document.createElement("select");
+
+  // Render rows
+  createRow("訓練區間", zoneSelect);
+  createRow("時長 (每組/總時長)", durationSelect);
+  createRow("組數", setsSelect);
+  createRow("組間休息", restSelect);
+
+  // Actions (Footer)
+  const actions = el("div", "authActions");
+  actions.style.marginTop = "20px";
+  
+  const cancelBtn = el("button", "btn authBackBtn", "取消");
+  cancelBtn.type = "button";
+  cancelBtn.addEventListener("click", () => overlay.remove());
+
+  const importBtn = el("button", "btn btn--primary authSubmitBtn", "匯入課表");
+  importBtn.type = "button";
+  importBtn.addEventListener("click", () => {
+    const zoneKey = zoneSelect.value;
+    const config = WORKOUT_HELPER_CONFIG[zoneKey];
+    
+    const repDur = Number(durationSelect.value);
+    const sets = Number(setsSelect.value);
+    const rest = Number(restSelect.value);
+    
+    let totalDuration = 0;
+    let noteText = "";
+
+    if (config.type === "continuous") {
+      totalDuration = repDur;
+      noteText = `${config.label.split(" ")[0]} ${repDur} 分鐘`;
+    } else {
+      totalDuration = Math.round((repDur + rest) * sets);
+      
+      const repStr = repDur < 1 ? `${Math.round(repDur * 60)}秒` : `${repDur}分鐘`;
+      const restStr = rest < 1 ? `${Math.round(rest * 60)}秒` : `${rest}分鐘`;
+      noteText = `熱身 10-15 分鐘\n${sets} x ${repStr} 間歇, 休息 ${restStr}\n緩和 10-15 分鐘`;
+    }
+
+    lockScrollPosition(() => {
+      pushHistory();
+      
+      if (session.workoutsCount < 1) {
+        session.workoutsCount = 1;
+        ensureSessionWorkouts(session);
+      }
+      
+      if (session.workouts[0]) {
+        session.workouts[0].duration = Math.round(totalDuration);
+        session.workouts[0].rpe = config.rpe;
+      }
+      
+      session.note = noteText;
+      
+      if (onImport) onImport();
+      overlay.remove();
+    });
+  });
+  
+  actions.appendChild(cancelBtn);
+  actions.appendChild(importBtn);
+
+  form.appendChild(actions);
+
+  modal.appendChild(header);
+  modal.appendChild(form);
+  overlay.appendChild(modal);
+
+  // Logic
+  const updateSetsAndRest = (config) => {
+    setsSelect.innerHTML = "";
+    restSelect.innerHTML = "";
+    
+    const repDur = Number(durationSelect.value);
+    if (!Number.isFinite(repDur) || repDur <= 0) return;
+    
+    // Calculate Sets options
+    if (config.setsOptions) {
+      config.setsOptions.forEach(s => {
+        const opt = document.createElement("option");
+        opt.value = s;
+        opt.textContent = `${s} 組`;
+        setsSelect.appendChild(opt);
+      });
+    } else {
+      const minSets = Math.ceil(config.minTotal / repDur);
+      const maxSets = Math.floor(config.maxTotal / repDur);
+      const start = Math.max(1, minSets);
+      const end = Math.max(start, maxSets); 
+      
+      for (let s = start; s <= end; s++) {
+        const opt = document.createElement("option");
+        opt.value = s;
+        opt.textContent = `${s} 組 (總時長 ${(s * repDur).toFixed(1).replace('.0','')} 分)`;
+        setsSelect.appendChild(opt);
+      }
+    }
+
+    // Calculate Rest options
+    const ratios = Array.isArray(config.restRatios) 
+      ? config.restRatios 
+      : [config.restRatio || 1];
+      
+    // Handle Min/Max if range provided (legacy)
+    if (!config.restRatios && (config.restRatioMin || config.restRatioMax)) {
+      const restMin = repDur * (config.restRatioMin || config.restRatio);
+      const restMax = repDur * (config.restRatioMax || config.restRatio);
+      
+      const rOpt = document.createElement("option");
+      const rText = restMin < 1 ? `${Math.round(restMin * 60)} 秒` : `${restMin} 分鐘`;
+      rOpt.value = restMin;
+      rOpt.textContent = `${rText} (${config.restText})`;
+      restSelect.appendChild(rOpt);
+
+      if (restMax > restMin) {
+        const rOpt2 = document.createElement("option");
+        const rText2 = restMax < 1 ? `${Math.round(restMax * 60)} 秒` : `${restMax} 分鐘`;
+        rOpt2.value = restMax;
+        rOpt2.textContent = `${rText2}`;
+        restSelect.appendChild(rOpt2);
+      }
+      return;
+    }
+
+    // Standard list of ratios
+    ratios.forEach(ratio => {
+      const val = repDur * ratio;
+      const opt = document.createElement("option");
+      opt.value = val;
+      
+      const valText = val < 1 ? `${Math.round(val * 60)} 秒` : `${val} 分鐘`;
+      
+      let ratioLabel = "";
+      if (Math.abs(ratio - 1) < 0.01) ratioLabel = "1:1";
+      else if (Math.abs(ratio - 0.5) < 0.01) ratioLabel = "1:0.5";
+      else if (Math.abs(ratio - 0.25) < 0.01) ratioLabel = "4:1";
+      else ratioLabel = `1:${ratio}`;
+      
+      const desc = config.restRatios ? `(跑休 ${ratioLabel})` : `(${config.restText})`;
+      
+      opt.textContent = `${valText} ${desc}`;
+      restSelect.appendChild(opt);
+    });
+  };
+
+  const updateFields = () => {
+    const zoneKey = zoneSelect.value;
+    const config = WORKOUT_HELPER_CONFIG[zoneKey];
+    
+    durationSelect.innerHTML = "";
+    setsSelect.innerHTML = "";
+    restSelect.innerHTML = "";
+
+    if (config.type === "continuous") {
+      for (let m = config.durationMin; m <= config.durationMax; m += config.durationStep) {
+        const opt = document.createElement("option");
+        opt.value = m;
+        opt.textContent = `${m} 分鐘`;
+        durationSelect.appendChild(opt);
+      }
+      
+      const sOpt = document.createElement("option");
+      sOpt.value = "1";
+      sOpt.textContent = "1 組";
+      setsSelect.appendChild(sOpt);
+      setsSelect.disabled = true;
+
+      const rOpt = document.createElement("option");
+      rOpt.value = "0";
+      rOpt.textContent = "—";
+      restSelect.appendChild(rOpt);
+      restSelect.disabled = true;
+
+    } else {
+      setsSelect.disabled = false;
+      restSelect.disabled = false;
+
+      config.repOptions.forEach(m => {
+        const opt = document.createElement("option");
+        opt.value = m;
+        opt.textContent = m < 1 ? `${m * 60} 秒` : `${m} 分鐘`;
+        durationSelect.appendChild(opt);
+      });
+
+      updateSetsAndRest(config);
+    }
+  };
+
+  zoneSelect.addEventListener("change", updateFields);
+  durationSelect.addEventListener("change", () => {
+    const config = WORKOUT_HELPER_CONFIG[zoneSelect.value];
+    if (config.type === "interval") updateSetsAndRest(config);
+  });
+
+  // Init
+  updateFields();
+
+  document.body.appendChild(overlay);
+}
+
 function parseHmsToSeconds(raw) {
   if (typeof raw !== "string") return null;
   const s = raw.trim();
@@ -3605,6 +3915,51 @@ function renderWeekDetails() {
       });
     });
     workoutControls.appendChild(workoutSelect);
+
+    const helperBtn = document.createElement("button");
+    helperBtn.className = "btn btn--primary";
+    helperBtn.style.marginLeft = "8px";
+    helperBtn.style.padding = "0 8px";
+    helperBtn.style.height = "24px";
+    helperBtn.style.lineHeight = "22px";
+    helperBtn.style.fontSize = "12px";
+    helperBtn.textContent = "課表小助手";
+    helperBtn.addEventListener("click", () => {
+      openWorkoutHelperModal(s, () => {
+        ensureSessionWorkouts(s);
+        persistState();
+        renderCalendar();
+        renderCharts();
+        renderWeekDetails();
+      });
+    });
+    workoutControls.appendChild(helperBtn);
+
+    const resetBtn = document.createElement("button");
+    resetBtn.className = "btn btn--reset";
+    resetBtn.style.marginLeft = "4px";
+    resetBtn.style.padding = "0 8px";
+    resetBtn.style.height = "24px";
+    resetBtn.style.lineHeight = "22px";
+    resetBtn.style.fontSize = "12px";
+    resetBtn.textContent = "重設";
+    resetBtn.addEventListener("click", () => {
+      if (confirm("確定要重設此訓練嗎？")) {
+        lockScrollPosition(() => {
+          pushHistory();
+          s.workoutsCount = 1;
+          s.workouts = [{ duration: 0, rpe: 1 }];
+          s.note = "";
+          ensureSessionWorkouts(s);
+          persistState();
+          renderCalendar();
+          renderCharts();
+          renderWeekDetails();
+        });
+      }
+    });
+    workoutControls.appendChild(resetBtn);
+
     titleRight.appendChild(workoutControls);
     titleRow.appendChild(titleRight);
     card.appendChild(titleRow);

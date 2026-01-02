@@ -1954,3 +1954,15 @@ p {
     grid-template-columns: 1fr;
   }
 }
+
+.btn--reset {
+  color: #dc2626;
+  border-color: #dc2626;
+  background: transparent;
+}
+
+.btn--reset:hover {
+  background-color: #fef2f2;
+  border-color: #b91c1c;
+  color: #b91c1c;
+}
