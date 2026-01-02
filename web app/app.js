@@ -4523,6 +4523,7 @@ async function init() {
   wireTabs();
   wireHowTo();
   wireButtons();
+  wireBlogSearch();
   await wireAuth();
   if (!authUser) {
     clearPersistedTrainingState();
@@ -4566,12 +4567,26 @@ const BLOG_POSTS = [
   }
 ];
 
-function renderBlog() {
+function renderBlog(filterText = "") {
   const listRoot = document.getElementById("blogList");
   if (!listRoot) return;
 
   listRoot.replaceChildren();
-  BLOG_POSTS.forEach((p) => {
+  const term = String(filterText || "").trim().toLowerCase();
+
+  const filtered = BLOG_POSTS.filter((p) => {
+    if (!term) return true;
+    const t = (p.title || "").toLowerCase();
+    const e = (p.excerpt || "").toLowerCase();
+    return t.includes(term) || e.includes(term);
+  });
+
+  if (filtered.length === 0) {
+    listRoot.appendChild(el("div", "muted", "沒有找到符合的文章"));
+    return;
+  }
+
+  filtered.forEach((p) => {
     // Create an anchor tag for SEO-friendly linking
     const row = el("a", "blogItem");
     row.href = p.url;
@@ -4596,6 +4611,14 @@ function renderBlog() {
   
   // Clean up title if switching back from article view (legacy cleanup)
   document.title = "訓練監控";
+}
+
+function wireBlogSearch() {
+  const input = document.getElementById("blogSearchInput");
+  if (!input) return;
+  input.addEventListener("input", (e) => {
+    renderBlog(e.target.value);
+  });
 }
 
 // Legacy functions removed for pure static linking
