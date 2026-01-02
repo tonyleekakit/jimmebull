@@ -1966,3 +1966,7 @@ p {
   border-color: #b91c1c;
   color: #b91c1c;
 }
+
+.authSubmitBtn {
+  color: white;
+}
