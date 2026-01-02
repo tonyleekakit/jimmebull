@@ -3566,7 +3566,7 @@ function updateHeader() {
         const warn = document.createElement("span");
         warn.style.color = "#ef4444";
         warn.style.fontWeight = "bold";
-        warn.textContent = "未設定";
+        warn.textContent = '請到"配速計算機"推測VDOT';
         plannedVolume52El.appendChild(warn);
       }
     }
