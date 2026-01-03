@@ -1953,6 +1953,117 @@ p {
   .paceGrid {
     grid-template-columns: 1fr;
   }
+
+  /* --- Mobile Layout Improvements --- */
+  
+  /* Header: Tabs below Brand/Auth */
+  .topbar {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 10px 12px;
+  }
+  .brand {
+    order: 1;
+    margin-right: auto;
+  }
+  .authBtn {
+    order: 2;
+  }
+  .tabs {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+    margin: 0 -12px;
+    padding: 4px 12px;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    gap: 8px;
+  }
+  .tab {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  /* Plan Controls */
+  .planTop {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .planTop__left, .planTop__right, .planTop__center {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .planTop__center {
+    text-align: left;
+    grid-template-columns: 1fr 1fr;
+  }
+  
+  /* Reset Buttons Area */
+  .planActions__right {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .planActions__right .btn {
+    width: 100%;
+    justify-content: center;
+    white-space: nowrap;
+    height: auto;
+    min-height: 38px;
+    padding: 6px 4px;
+    font-size: 13px;
+  }
+
+  /* Week Picker Section */
+  .weekHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .weekPicker {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  /* Day Card Mobile Fixes */
+  .dayCard {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .dayTitleRow {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .dayTitleLeft {
+    width: 100%;
+  }
+  .dayTitleRight {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .dayWorkoutControls {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .dayTitle {
+    white-space: nowrap;
+  }
+  /* Ensure helper buttons don't get crushed */
+  .dayWorkoutControls .btn {
+    white-space: nowrap;
+    flex: 1 0 auto; /* Allow growth but ensure base width */
+  }
 }
 
 .btn--reset {
