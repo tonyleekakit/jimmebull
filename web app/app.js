@@ -4871,6 +4871,14 @@ const BLOG_POSTS = [
     excerpt: "解析每週跑量增幅的風險與更穩陣的做法。固定 10% 並非萬靈丹，根據單調度與 ACWR 的組合調整更安全。",
     author: "傑哥, 香港中文大學-運動醫學碩士",
     social: "Instagram/Threads: @kitgordont"
+  },
+  {
+    id: "p2",
+    title: "系統更新 (2026-01-04)：ACWR 係數調整與比賽輸入優化",
+    date: "2026-01-04",
+    url: "./blog/update-2026-01-04.html",
+    excerpt: "2026-01-04 系統更新說明：新增可編輯的 ACWR(訓練量) 欄位，優化週期自動調整機制，並修正比賽輸入後的係數更新邏輯。",
+    author: "系統管理員"
   }
 ];
 

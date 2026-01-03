@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>系統更新 (2026-01-04)：ACWR 係數調整與比賽輸入優化 | 訓練監控</title>
+  <meta name="description" content="2026-01-04 系統更新說明：新增可編輯的 ACWR(訓練量) 欄位，優化週期自動調整機制，並修正比賽輸入後的係數更新邏輯。">
+  
+  <!-- Canonical URL -->
+  <link rel="canonical" href="https://trainingmon.com/blog/update-2026-01-04.html" />
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="../assets/logo.png" />
+  <link rel="apple-touch-icon" href="../assets/logo.png" />
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://trainingmon.com/blog/update-2026-01-04.html" />
+  <meta property="og:title" content="系統更新 (2026-01-04)：ACWR 係數調整與比賽輸入優化 | 訓練監控" />
+  <meta property="og:description" content="2026-01-04 系統更新說明：新增可編輯的 ACWR(訓練量) 欄位，優化週期自動調整機制，並修正比賽輸入後的係數更新邏輯。" />
+  <meta property="og:image" content="https://trainingmon.com/assets/logo.png" />
+  <meta property="og:site_name" content="Training Monitor 訓練監控" />
+  <meta property="og:locale" content="zh_HK" />
+
+  <!-- Twitter -->
+  <meta property="twitter:card" content="summary" />
+  <meta property="twitter:url" content="https://trainingmon.com/blog/update-2026-01-04.html" />
+  <meta property="twitter:title" content="系統更新 (2026-01-04)：ACWR 係數調整與比賽輸入優化 | 訓練監控" />
+  <meta property="twitter:description" content="2026-01-04 系統更新說明：新增可編輯的 ACWR(訓練量) 欄位，優化週期自動調整機制，並修正比賽輸入後的係數更新邏輯。" />
+  <meta property="twitter:image" content="https://trainingmon.com/assets/logo.png" />
+
+  <link rel="stylesheet" href="../styles.css?v=2.7">
+  <script src="blog-toc.js" defer></script>
+</head>
+<body>
+  <div class="page-container">
+    <nav class="nav">
+      <a href="../index.html#plan">← 回到首頁</a>
+      <a href="../index.html#blog">部落格列表</a>
+    </nav>
+    <article>
+      <header class="article-header">
+        <h1 class="article-title">系統更新 (2026-01-04)：ACWR 係數調整與比賽輸入優化</h1>
+        <div class="article-meta">
+          2026-01-04 · 作者: 系統管理員
+        </div>
+      </header>
+      <div class="article-content">
+        <p>本次更新主要針對 ACWR 係數的控制靈活性與自動化邏輯進行了優化，以下是詳細更新內容：</p>
+
+        <h2>1. 新增「ACWR(訓練量)」可編輯欄位</h2>
+        <p>為了讓用戶更直觀地控制每週的訓練負荷，我們在訓練表中新增了 <strong>「ACWR(訓練量)」</strong> 欄位。</p>
+        <ul>
+            <li><strong>功能</strong>：此欄位允許您直接輸入該週的 ACWR 目標係數（例如 1.2），系統會自動根據此係數計算出該週的「計劃訓練量（小時）」。</li>
+            <li><strong>格式優化</strong>：係數顯示格式已從兩位小數（如 1.20）簡化為一位小數（如 1.2），讓介面更簡潔，輸入更方便。</li>
+            <li><strong>雙軌並行</strong>：原有的「ACWR」欄位保留為唯讀指標，用於顯示根據實際訓練量計算出的監控數據；新欄位則專注於「計劃」輸入。</li>
+        </ul>
+
+        <h2>2. 週期自動調整機制優化</h2>
+        <p>現在，當您切換每週的「週期」(Block) 時，系統會自動帶入建議的 ACWR 係數：</p>
+        <ul>
+            <li><strong>基礎期 (Base)</strong>：預設係數 1.2</li>
+            <li><strong>建立期 (Build)</strong>：預設係數 1.1</li>
+            <li><strong>減量期 (Deload)</strong>：預設係數 0.6</li>
+            <li><strong>過渡期 (Transition)</strong>：預設係數 0.5</li>
+        </ul>
+        <p>如果您手動修改了某週的係數，該週將會暫時鎖定為手動模式。若再次切換週期，系統則會重新套用預設係數。</p>
+
+        <h2>3. 比賽輸入邏輯修正</h2>
+        <p>修正了在「輸入比賽」後，相關週次的係數未即時更新的問題。現在當您新增或修改比賽資訊：</p>
+        <ul>
+            <li>系統會自動將該週（及相關調整週）的週期切換為「巔峰 (Peak)」或對應週期。</li>
+            <li>同時強制重新計算該週的 ACWR 係數，確保訓練量計畫能即時反映賽事需求。</li>
+        </ul>
+
+        <hr />
+        <p>如有任何使用問題，歡迎隨時回報。</p>
+      </div>
+    </article>
+    <footer class="footer">
+      &copy; 2026 Training Monitor
+    </footer>
+  </div>
+</body>
+</html>
