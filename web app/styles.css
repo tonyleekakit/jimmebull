@@ -742,25 +742,6 @@ p {
   margin: 0;
 }
 
-.calRow[data-row-key="volumeHrs"] .calInput {
-  height: 100%;
-  padding: 0;
-  border: 0;
-  border-color: transparent;
-  background: transparent;
-  border-radius: 0;
-}
-
-.calRow[data-row-key="volumeHrs"] .calInputWrap {
-  padding: 0;
-}
-
-.calRow[data-row-key="volumeHrs"] .calInput:hover,
-.calRow[data-row-key="volumeHrs"] .calInput:focus {
-  border-color: transparent;
-  background: transparent;
-}
-
 .calInput:hover {
   background: rgba(255, 255, 255, 0.05);
 }

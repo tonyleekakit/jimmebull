@@ -76,21 +76,36 @@ function recomputeFormulaVolumes() {
       effective[i] = 0;
       continue;
     }
-    const mode = w.volumeMode === "formula" ? "formula" : "direct";
-    w.volumeMode = mode;
-    if (mode === "formula") {
-      const f = Number(w.volumeFactor);
-      const factor = Number.isFinite(f) ? f : 1;
-      w.volumeFactor = factor;
-      const base = computePastMean(effective, i, 4);
-      const out = formatVolumeHrs(base * factor);
-      w.volumeHrs = out;
-      effective[i] = Number(out) || 0;
-    } else {
-      if (!Number.isFinite(Number(w.volumeFactor))) w.volumeFactor = 1;
-      effective[i] = Number(w.volumeHrs) || 0;
-      if (typeof w.volumeHrs !== "string") w.volumeHrs = w.volumeHrs ? String(w.volumeHrs) : "";
+    
+    // Ensure formula mode properties are set
+    w.volumeMode = "formula";
+
+    // Apply auto factor logic if enabled
+    if (w.volumeFactorAuto === true) {
+       const autoFactor = defaultVolumeFactorForWeekIndex(i);
+       if (Number.isFinite(autoFactor)) w.volumeFactor = autoFactor;
     }
+    
+    // Safety check for factor
+    if (!Number.isFinite(Number(w.volumeFactor))) w.volumeFactor = 1;
+
+    const f = Number(w.volumeFactor);
+    const factor = Number.isFinite(f) ? f : 1;
+    
+    // Always recompute volumeHrs based on past 4-week average * factor
+    // The "base" is the average of the last 4 weeks' *effective* volume
+    // effective[i] stores the actual number used for subsequent calculations
+    let base = computePastMean(effective, i, 4);
+    
+    // Fallback: If base is 0 (e.g., first week or after long break), 
+    // treat base as 1 so that Volume = Factor. 
+    // This allows users to set an initial volume by setting the factor directly (or via the volume input).
+    if (base <= 0) base = 1;
+
+    const out = formatVolumeHrs(base * factor);
+    
+    w.volumeHrs = out;
+    effective[i] = Number(out) || 0;
   }
 }
 
@@ -827,8 +842,8 @@ function defaultVolumeFactorForWeekIndex(weekIndex) {
 
   if (block === "Base") return 1.2;
   if (block === "Deload") return 0.6;
-  if (block === "Build") return 1;
-  if (block === "Transition") return 1;
+  if (block === "Build") return 1.1;
+  if (block === "Transition") return 0.5;
   return 1;
 }
 
@@ -838,7 +853,7 @@ function refreshAutoVolumeFactors() {
   for (let i = 0; i < 52; i++) {
     const w = state.weeks[i];
     if (!w) continue;
-    if (w.volumeMode !== "formula") continue;
+    // Always refresh auto factor if enabled, regardless of mode
     if (w.volumeFactorAuto !== true) continue;
     const next = defaultVolumeFactorForWeekIndex(i);
     if (Number(w.volumeFactor) !== next) {
@@ -909,6 +924,8 @@ function applyCoachBlockRules() {
     const next = blocks[i] || "Base";
     if (normalizeBlockValue(w.block || "") !== next) {
       w.block = next;
+      // If block changes by rule, reset volume factor to auto
+      w.volumeFactorAuto = true;
       changed = true;
     }
   }
@@ -3500,8 +3517,8 @@ function buildInitialWeeks() {
       phasesAuto: true,
       volumeHrs: "",
       volumeMode: "direct",
-      volumeFactor: 1,
-      volumeFactorAuto: false,
+      volumeFactor: 1.2,
+      volumeFactorAuto: true,
       sessions: buildDefaultSessions(),
     });
   }
@@ -3604,6 +3621,7 @@ function renderCalendar() {
     { label: "優先級", key: "priority", type: "prioritySelect" },
     ...phaseRows,
     { label: "計劃訓練量（小時）", key: "volumeHrs", type: "text" },
+    { label: "ACWR(訓練量)", key: "volumeFactor", type: "acwrInput" },
     { label: "單調度", key: "monotony", type: "metric" },
     { label: "ACWR", key: "acwr", type: "metric" },
   ];
@@ -3678,9 +3696,29 @@ function renderCalendar() {
         select.addEventListener("click", (e) => e.stopPropagation());
         select.addEventListener("change", () => {
           pushHistory();
-          w.block = select.value;
+          const val = select.value;
+          w.block = val;
+          
+          // Force auto mode
+          w.volumeFactorAuto = true;
+          
+          // Manually set factor based on block to ensure immediate update
+          let nextFactor = 1.0;
+          if (val === "Base") nextFactor = 1.2;
+          else if (val === "Build") nextFactor = 1.1;
+          else if (val === "Deload") nextFactor = 0.6;
+          else if (val === "Transition") nextFactor = 0.5;
+          else {
+             // For Peak or others, rely on default logic which checks races
+             nextFactor = defaultVolumeFactorForWeekIndex(i);
+          }
+          w.volumeFactor = nextFactor;
+          
           applyCoachPhaseRules();
           refreshAutoVolumeFactors();
+          // Explicitly recompute because we manually changed the factor
+          recomputeFormulaVolumes();
+          
           persistState();
           updateHeader();
           renderCalendar();
@@ -3736,15 +3774,78 @@ function renderCalendar() {
         } else {
           setCellText(cell, "—");
         }
+      } else if (row.type === "acwrInput") {
+        const wrap = el("div", "calInputWrap");
+        const input = document.createElement("input");
+        input.className = "calInput";
+        input.type = "number";
+        input.step = "0.1";
+        input.min = "0";
+        const f = Number(w.volumeFactor);
+        input.value = Number.isFinite(f) ? f.toFixed(1) : "1.0";
+        if (Number.isFinite(f) && f > 1.5) input.style.color = "#ef4444";
+        input.addEventListener("change", () => {
+          const raw = input.value;
+          const next = parseFloat(raw);
+          if (!Number.isFinite(next) || next < 0) {
+            const old = Number(w.volumeFactor);
+            input.value = Number.isFinite(old) ? old.toFixed(1) : "1.0";
+            return;
+          }
+          lockScrollPosition(() => {
+            pushHistory();
+            w.volumeFactor = next;
+            w.volumeMode = "formula";
+            // User manually changed factor, so disable auto update for this week
+            w.volumeFactorAuto = false;
+            recomputeFormulaVolumes();
+            persistState();
+            updateHeader();
+            renderCalendar();
+            renderCharts();
+            renderWeekDetails();
+          });
+        });
+        wrap.appendChild(input);
+        cell.appendChild(wrap);
       } else if (row.type === "text" && row.key === "volumeHrs") {
-        cell.classList.add("calCell--clickable");
-        const btn = el("button", "calWeekBtn", "");
-        btn.type = "button";
-        btn.setAttribute("aria-label", `編輯 ${weekLabelZh(w.weekNo)} 的計劃訓練量（小時）`);
-        const text = w.volumeHrs ? `${w.volumeHrs}` : "—";
-        btn.appendChild(el("span", "fitText", text));
-        btn.addEventListener("click", () => openPlannedVolumeModal(i));
-        cell.appendChild(btn);
+        const wrap = el("div", "calInputWrap");
+        const input = document.createElement("input");
+        input.className = "calInput";
+        input.type = "number";
+        input.step = "0.1";
+        input.min = "0";
+        input.value = w.volumeHrs ? String(w.volumeHrs) : "";
+        input.addEventListener("change", () => {
+          const raw = input.value.trim();
+          const nextVal = parseFloat(raw);
+          
+          lockScrollPosition(() => {
+            pushHistory();
+            
+            // Reverse calculate factor: NewVolume = Base * Factor  =>  Factor = NewVolume / Base
+            // We need the base from the previous 4 weeks
+            const pastVolumes = state.weeks.map(wk => Number(wk.volumeHrs) || 0);
+            let base = computePastMean(pastVolumes, i, 4);
+            
+            // If base is 0, treat as 1 (consistent with recomputeFormulaVolumes logic)
+            if (base <= 0) base = 1;
+            
+            if (Number.isFinite(nextVal) && nextVal >= 0) {
+               w.volumeFactor = nextVal / base;
+               w.volumeFactorAuto = false;
+            }
+            
+            recomputeFormulaVolumes();
+            persistState();
+            updateHeader();
+            renderCalendar();
+            renderCharts();
+            renderWeekDetails();
+          });
+        });
+        wrap.appendChild(input);
+        cell.appendChild(wrap);
       } else {
         setCellText(cell, w[row.key] || "");
       }
@@ -4196,255 +4297,7 @@ function openWeekDetailsModal(weekIndex) {
   selectWeek(clamp(weekIndex, 0, 51));
 }
 
-function openPlannedVolumeModal(weekIndex) {
-  const idx = clamp(Number(weekIndex) || 0, 0, 51);
-  const w = state.weeks[idx];
-  if (!w) return;
 
-  const overlay = el("div", "overlay");
-  const onKeyDown = (e) => {
-    if (e.key === "Escape") closeModal();
-  };
-
-  const closeModal = () => {
-    document.removeEventListener("keydown", onKeyDown);
-    overlay.remove();
-  };
-
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) closeModal();
-  });
-
-  const modal = el("div", "modal volumeModal");
-  const title = el("div", "modal__title", `計劃訓練量 · ${weekLabelZh(w.weekNo)}`);
-  const subtitle = el("div", "muted", "公式固定為：過去四週平均訓練量 × 參數");
-
-  const form = el("form", "volumeForm");
-
-  const row1 = el("div", "volumeRow");
-  row1.appendChild(el("div", "volumeLabel", "模式"));
-  const modeWrap = el("div", "volumeToggle");
-  const modeDirect = document.createElement("button");
-  modeDirect.type = "button";
-  modeDirect.className = "btn volumeToggleBtn";
-  modeDirect.textContent = "直接更改";
-  const modeFormula = document.createElement("button");
-  modeFormula.type = "button";
-  modeFormula.className = "btn volumeToggleBtn";
-  modeFormula.textContent = "公式";
-  let mode = idx >= 4 ? "formula" : w.volumeMode === "formula" ? "formula" : "direct";
-  const syncMode = () => {
-    modeDirect.classList.toggle("is-active", mode === "direct");
-    modeFormula.classList.toggle("is-active", mode === "formula");
-    if (mode === "direct") {
-      row2.style.display = "none";
-      row3.style.display = "grid";
-      row4.style.display = "none";
-      row4b.style.display = "none";
-      applyToOthers = false;
-      syncToggle();
-    } else {
-      row2.style.display = "grid";
-      row3.style.display = "none";
-      row4.style.display = "grid";
-      row4b.style.display = "grid";
-    }
-
-    if (mode === "formula" && factor && factor.dataset.touched !== "1") {
-      const v = defaultFactorForThisWeek();
-      factor.value = Number.isFinite(v) ? String(Math.round(v * 100) / 100) : "1.00";
-    }
-  };
-  modeDirect.addEventListener("click", () => {
-    mode = "direct";
-    syncMode();
-    window.setTimeout(() => direct.focus(), 0);
-  });
-  modeFormula.addEventListener("click", () => {
-    mode = "formula";
-    syncMode();
-    updatePreview();
-    window.setTimeout(() => factor.focus(), 0);
-  });
-  modeWrap.appendChild(modeDirect);
-  modeWrap.appendChild(modeFormula);
-  row1.appendChild(modeWrap);
-  form.appendChild(row1);
-
-  const row2 = el("div", "volumeRow");
-  row2.appendChild(el("div", "volumeLabel", "套用到其他週"));
-  const applyWrap = el("div", "volumeToggle");
-  const applyYes = document.createElement("button");
-  applyYes.type = "button";
-  applyYes.className = "btn volumeToggleBtn";
-  applyYes.textContent = "是";
-  const applyNo = document.createElement("button");
-  applyNo.type = "button";
-  applyNo.className = "btn volumeToggleBtn";
-  applyNo.textContent = "否";
-  let applyToOthers = idx >= 4;
-  const syncToggle = () => {
-    applyYes.classList.toggle("is-active", applyToOthers);
-    applyNo.classList.toggle("is-active", !applyToOthers);
-  };
-  applyYes.addEventListener("click", () => {
-    applyToOthers = true;
-    syncToggle();
-  });
-  applyNo.addEventListener("click", () => {
-    applyToOthers = false;
-    syncToggle();
-  });
-  applyWrap.appendChild(applyYes);
-  applyWrap.appendChild(applyNo);
-  row2.appendChild(applyWrap);
-  form.appendChild(row2);
-
-  const row3 = el("div", "volumeRow");
-  row3.appendChild(el("div", "volumeLabel", "直接輸入（小時）"));
-  const direct = document.createElement("input");
-  direct.className = "input volumeInput";
-  direct.type = "number";
-  direct.inputMode = "decimal";
-  direct.step = "0.1";
-  direct.placeholder = "小時";
-  direct.value = w.volumeHrs || "";
-  row3.appendChild(direct);
-  form.appendChild(row3);
-
-  const row4 = el("div", "volumeRow");
-  row4.hidden = true;
-  row4.appendChild(el("div", "volumeLabel", "參數"));
-  const factor = document.createElement("input");
-  factor.className = "input volumeInput";
-  factor.type = "number";
-  factor.inputMode = "decimal";
-  factor.step = "0.01";
-  factor.placeholder = "例如：1.10";
-  const defaultFactorForThisWeek = () => defaultVolumeFactorForWeekIndex(idx);
-  const initialFactor = (() => {
-    if (mode === "formula") {
-      if (w.volumeMode === "formula" && w.volumeFactorAuto !== true && Number.isFinite(Number(w.volumeFactor))) return Number(w.volumeFactor);
-      return defaultFactorForThisWeek();
-    }
-    return Number.isFinite(Number(w.volumeFactor)) ? Number(w.volumeFactor) : defaultFactorForThisWeek();
-  })();
-  factor.value = Number.isFinite(initialFactor) ? String(Math.round(initialFactor * 100) / 100) : "1.00";
-  row4.appendChild(factor);
-  form.appendChild(row4);
-
-  const row4b = el("div", "volumeRow");
-  row4b.hidden = true;
-  row4b.appendChild(el("div", "volumeLabel", "預覽"));
-  const preview = el("div", "muted", "—");
-  row4b.appendChild(preview);
-  form.appendChild(row4b);
-
-  const actions = el("div", "modal__actions");
-  const cancel = el("button", "btn", "取消");
-  cancel.type = "button";
-  cancel.addEventListener("click", () => closeModal());
-  const submit = el("button", "btn btn--primary", "確認");
-  submit.type = "submit";
-  actions.appendChild(cancel);
-  actions.appendChild(submit);
-  form.appendChild(actions);
-
-  const updatePreview = () => {
-    if (mode !== "formula") return;
-    const rawFactor = String(factor.value || "").trim();
-    const f = Number(rawFactor);
-    if (!Number.isFinite(f)) {
-      preview.textContent = "—";
-      return;
-    }
-    const baseline = state.weeks.map((w) => Number(w.volumeHrs) || 0);
-    const base = computePastMean(baseline, idx, 4);
-    const out = formatVolumeHrs(base * f);
-    preview.textContent = out ? `${out} 小時` : "—";
-  };
-
-  factor.addEventListener("input", () => {
-    factor.dataset.touched = "1";
-    updatePreview();
-  });
-
-  form.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const directRaw = String(direct.value || "").trim();
-    if (mode === "direct" && directRaw.length === 0) return;
-    if (mode === "formula" && String(factor.value || "").trim().length === 0) return;
-
-    pushHistory();
-    if (mode === "direct") {
-      const n = Number(directRaw);
-      const next = formatVolumeHrs(n);
-      const start = applyToOthers ? 0 : idx;
-      const end = applyToOthers ? state.weeks.length - 1 : idx;
-      for (let k = start; k <= end; k++) {
-        const wk = state.weeks[k];
-        if (!wk) continue;
-        wk.volumeMode = "direct";
-        wk.volumeFactor = 1;
-        wk.volumeFactorAuto = false;
-        wk.volumeHrs = next;
-      }
-      recomputeFormulaVolumes();
-    } else if (mode === "formula") {
-      const rawFactor = String(factor.value || "").trim();
-      const f = Number(rawFactor);
-      if (!Number.isFinite(f)) {
-        showToast("參數格式不正確", { variant: "warn", durationMs: 2000 });
-        return;
-      }
-      if (applyToOthers) {
-        for (let k = 0; k < state.weeks.length; k++) {
-          const wk = state.weeks[k];
-          if (!wk) continue;
-          if (k < 4) {
-            wk.volumeMode = "direct";
-            if (!Number.isFinite(Number(wk.volumeFactor))) wk.volumeFactor = 1;
-            wk.volumeFactorAuto = false;
-          } else {
-            wk.volumeMode = "formula";
-            wk.volumeFactor = defaultVolumeFactorForWeekIndex(k);
-            wk.volumeFactorAuto = true;
-          }
-        }
-        if (idx >= 4) {
-          const df = defaultVolumeFactorForWeekIndex(idx);
-          w.volumeMode = "formula";
-          w.volumeFactor = f;
-          w.volumeFactorAuto = Number.isFinite(df) && Number.isFinite(f) ? Math.abs(f - df) < 1e-9 : false;
-        }
-      } else {
-        const df = defaultVolumeFactorForWeekIndex(idx);
-        w.volumeMode = "formula";
-        w.volumeFactor = f;
-        w.volumeFactorAuto = Number.isFinite(df) && Number.isFinite(f) ? Math.abs(f - df) < 1e-9 : false;
-      }
-      recomputeFormulaVolumes();
-    }
-
-    persistState();
-    updateHeader();
-    renderCalendar();
-    renderCharts();
-    closeModal();
-  });
-
-  modal.appendChild(title);
-  modal.appendChild(subtitle);
-  modal.appendChild(form);
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
-
-  document.addEventListener("keydown", onKeyDown);
-  syncToggle();
-  syncMode();
-  updatePreview();
-  window.setTimeout(() => (mode === "formula" ? factor.focus() : direct.focus()), 0);
-}
 
 let toastTimer = null;
 function showToast(text, options) {
@@ -4681,6 +4534,8 @@ function openRaceInputModal() {
     kind.value = "";
     priority.value = "";
     w.priority = racePriority;
+    // Force auto volume factor when race/priority is updated
+    w.volumeFactorAuto = true;
     applyCoachAutoRules();
     refreshAutoVolumeFactors();
     persistState();
@@ -4895,8 +4750,8 @@ function wireButtons() {
         w.phasesAuto = true;
         w.volumeHrs = "";
         w.volumeMode = "direct";
-        w.volumeFactor = 1;
-        w.volumeFactorAuto = false;
+        w.volumeFactor = 1.2;
+        w.volumeFactorAuto = true;
       }
     } else {
       const connected = state.connected;
