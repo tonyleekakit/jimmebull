@@ -4881,19 +4881,36 @@ function wireButtons() {
 
   const resetBtn = document.getElementById("resetBtn");
   if (resetBtn) resetBtn.addEventListener("click", () => {
-    const ok = window.confirm("確定要重設表格內容？此操作會清除週課表資料 (階段、訓練量、每日課表)。");
+    const ok = window.confirm("確定要重設表格內容？此操作會清除週次設定 (階段、訓練量)，但保留每日課表。");
     if (!ok) return;
     pushHistory();
-    const connected = state.connected;
-    buildInitialWeeks();
-    state.connected = connected;
+    
+    if (Array.isArray(state.weeks) && state.weeks.length === 52) {
+      for (const w of state.weeks) {
+        w.races = [];
+        w.priority = "";
+        w.block = "Base";
+        w.season = "";
+        w.phases = [];
+        w.phasesAuto = true;
+        w.volumeHrs = "";
+        w.volumeMode = "direct";
+        w.volumeFactor = 1;
+        w.volumeFactorAuto = false;
+      }
+    } else {
+      const connected = state.connected;
+      buildInitialWeeks();
+      state.connected = connected;
+    }
+
     state.selectedWeekIndex = 0;
     persistState();
     updateHeader();
     renderCalendar();
     renderWeekPicker();
     renderWeekDetails();
-    showToast("已重設表格內容");
+    showToast("已重設表格內容 (保留每日課表)");
   });
 
   const generateBtn = document.getElementById("generateBtn");
