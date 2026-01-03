@@ -2747,6 +2747,7 @@ function persistState() {
       startDate: formatYMD(state.startDate),
       ytdVolumeHrs: Number.isFinite(state.ytdVolumeHrs) ? state.ytdVolumeHrs : null,
       vdot: Number.isFinite(state.vdot) ? state.vdot : null,
+      annualVolumeSettings: state.annualVolumeSettings,
       weeks: state.weeks.map((w) => ({
         races: Array.isArray(w.races) ? w.races : [],
         priority: w.priority || "",
@@ -4880,13 +4881,11 @@ function wireButtons() {
 
   const resetBtn = document.getElementById("resetBtn");
   if (resetBtn) resetBtn.addEventListener("click", () => {
-    const ok = window.confirm("確定要將表格內容重設為空白？此操作會清除已儲存資料。");
+    const ok = window.confirm("確定要重設表格內容？此操作會清除週課表資料 (階段、訓練量、每日課表)。");
     if (!ok) return;
     pushHistory();
     const connected = state.connected;
     buildInitialWeeks();
-    state.ytdVolumeHrs = null;
-    state.annualVolumeSettings = { startWeeklyHrs: null, maxUpPct: 12, maxDownPct: 25 };
     state.connected = connected;
     state.selectedWeekIndex = 0;
     persistState();
@@ -4894,7 +4893,7 @@ function wireButtons() {
     renderCalendar();
     renderWeekPicker();
     renderWeekDetails();
-    showToast("已重設為空白");
+    showToast("已重設表格內容");
   });
 
   const generateBtn = document.getElementById("generateBtn");
