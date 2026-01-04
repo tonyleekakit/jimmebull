@@ -537,12 +537,12 @@ function activateTab(nextKey, options) {
   }
 
   // Update Page Title for basic SEO (SPA)
-  const baseTitle = "訓練監控";
+  const baseTitle = "訓練調控";
   const titles = {
-    plan: "訓練監控 | 年度訓練計畫",
-    howto: "如何使用 | 訓練監控",
-    pace: "跑步配速計算機 | VDOT 訓練區間計算 | 訓練監控",
-    blog: "部落格 | 跑步科學文章 | 訓練監控"
+    plan: "訓練調控 | 年度訓練計畫",
+    howto: "如何使用 | 訓練調控",
+    pace: "跑步配速計算機 | VDOT 訓練區間計算 | 訓練調控",
+    blog: "部落格 | 跑步科學文章 | 訓練調控"
   };
   document.title = titles[key] || baseTitle;
 
@@ -4926,7 +4926,7 @@ function renderBlog(filterText = "") {
   });
   
   // Clean up title if switching back from article view (legacy cleanup)
-  document.title = "訓練監控";
+  document.title = "訓練調控";
 }
 
 function wireBlogSearch() {
