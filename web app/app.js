@@ -4877,7 +4877,7 @@ const BLOG_POSTS = [
     title: "沒有教練也能變強：Borg RPE 體感強度量表實戰教學（附網站自動計算負荷）",
     date: "2026-01-04",
     url: "./blog/borg-rpe-scale-guide.html",
-    excerpt: "很多跑者都有一個迷思：要變強是否一定要買昂貴手錶或請教練？本文介紹最有效的強度監控工具：Borg RPE 體感強度量表，教你如何利用體感量化訓練負荷。",
+    excerpt: "很多跑者都有一個迷思：要變強是否一定要買昂貴手錶或請教練？本文介紹最有效的強度調控工具：Borg RPE 體感強度量表，教你如何利用體感量化訓練負荷。",
     author: "傑哥, 香港中文大學-運動醫學碩士",
     social: "Instagram/Threads: @kitgordont"
   }
