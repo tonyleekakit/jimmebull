@@ -4,19 +4,26 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>訓練調控</title>
+    <meta name="description" content="訓練調控：52 週訓練表、週期設定、訓練量自動計算與風險指標 (ACWR/單調度)，支援比賽週期與每日課表管理。" />
     <link rel="icon" type="image/png" href="./assets/logo.png" />
     <link rel="apple-touch-icon" href="./assets/logo.png" />
     <link rel="stylesheet" href="./styles.css?v=2.7" />
     <link rel="canonical" href="https://trainingmon.com/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://trainingmon.com/" />
+    <meta property="og:title" content="訓練調控 | Training Monitor" />
+    <meta property="og:description" content="年度訓練計劃管理：週期化、訓練量調控與風險指標，搭配配速計算機與部落格教學。" />
+    <meta property="og:image" content="https://trainingmon.com/assets/logo.png" />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <header class="topbar">
       <nav class="tabs" aria-label="主要">
-        <button class="tab is-active" type="button" data-tab="plan">訓練調控</button>
+        <span class="tab is-active">訓練調控</span>
         <a href="./pace-calculator.html" class="tab">配速計算機</a>
-        <button class="tab" type="button" data-tab="blog">部落格</button>
+        <a href="./blog.html" class="tab">部落格</a>
       </nav>
-      <a class="brand" href="#plan" aria-label="返回訓練調控">
+      <a class="brand" href="./index.html" aria-label="返回訓練調控">
         <img class="brand__img" src="./assets/logo.png" alt="Logo" onerror="this.style.display='none';" />
       </a>
       <button id="authBtn" class="btn btn--primary authBtn" type="button">登入</button>
@@ -74,65 +81,34 @@
 
         <div id="chartsRoot" class="chartsGrid" aria-label="圖表內容"></div>
       </section>
+    
 
-
+    <script>
+      try {
+        const ld = {
+          "@context": "https://schema.org",
+          "@type": "WebSite",
+          "name": "訓練調控 | Training Monitor",
+          "url": "https://trainingmon.com/",
+          "potentialAction": {
+            "@type": "SearchAction",
+            "target": "https://trainingmon.com/blog.html?q={search_term_string}",
+            "query-input": "required name=search_term_string"
+          }
+        };
+        const script = document.createElement("script");
+        script.type = "application/ld+json";
+        script.text = JSON.stringify(ld);
+        document.head.appendChild(script);
+      } catch(e) {}
+    </script>
 
       <!-- 配速計算機 Tab Content Moved to pace-calculator.html -->
 
-      <section id="tab-blog" class="tabPanel" aria-label="部落格">
-        <div class="calendarSummary" aria-label="部落格說明">
-          <div class="howtoIntro__title">部落格</div>
-          <div class="muted">跑步訓練、恢復、風險管理等文章</div>
-        </div>
-        <div class="blogGrid" aria-label="部落格內容">
-          <div class="chartCard" aria-label="文章列表">
-            <div class="chartCard__title">文章列表</div>
-            <div class="blogSearch" style="margin-bottom: 12px;">
-              <input id="blogSearchInput" class="input" type="text" placeholder="輸入關鍵字搜尋標題或內容" aria-label="搜尋文章">
-            </div>
-            <div id="blogList" class="blogList"></div>
-          </div>
-          <div class="chartCard" aria-label="文章內容">
-            <div id="blogTitle" class="chartCard__title"></div>
-            <div id="blogMeta" class="muted"></div>
-            <div id="blogArticle"></div>
-          </div>
-        </div>
-      </section>
+      
     </main>
 
-    <script>
-      (function() {
-        try {
-          var h = window.location.hash.replace(/^#/, '').trim();
-          if (h) {
-            var tabs = document.querySelectorAll('.tab[data-tab]');
-            var panels = document.querySelectorAll('.tabPanel');
-            var match = false;
-            
-            for (var i = 0; i < panels.length; i++) {
-              if (panels[i].id === 'tab-' + h) {
-                match = true;
-                break;
-              }
-            }
-
-            if (match) {
-              for (var i = 0; i < tabs.length; i++) {
-                var t = tabs[i];
-                if (t.getAttribute('data-tab') === h) t.classList.add('is-active');
-                else t.classList.remove('is-active');
-              }
-              for (var i = 0; i < panels.length; i++) {
-                var p = panels[i];
-                if (p.id === 'tab-' + h) p.classList.add('is-active');
-                else p.classList.remove('is-active');
-              }
-            }
-          }
-        } catch(e) {}
-      })();
-    </script>
+    
 
     <script>
       globalThis.__SUPABASE__ = {
@@ -141,6 +117,6 @@
       };
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./app.js?v=20"></script>
+    <script src="./app.js?v=21"></script>
   </body>
 </html>
