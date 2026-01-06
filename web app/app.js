@@ -100,12 +100,44 @@ function recomputeFormulaVolumes() {
     // Fallback: If base is 0 (e.g., first week or after long break), 
     // treat base as 1 so that Volume = Factor. 
     // This allows users to set an initial volume by setting the factor directly (or via the volume input).
-    if (base <= 0) base = 1;
+    if (base <= 0) {
+       base = Number.isFinite(state.planBaseVolume) && state.planBaseVolume > 0 ? state.planBaseVolume : 1;
+    }
 
     const out = formatVolumeHrs(base * factor);
     
     w.volumeHrs = out;
     effective[i] = Number(out) || 0;
+  }
+}
+
+function optimizePlanBaseVolume(targetAnnualHrs) {
+  if (!targetAnnualHrs || targetAnnualHrs <= 0) return;
+
+  // We want to find state.planBaseVolume such that sum(volumeHrs) ~= targetAnnualHrs.
+  // Since volumeHrs is monotonically increasing with planBaseVolume, we can use binary search.
+  
+  let low = 0;
+  // A safe upper bound: if factors are ~1.0, base ~ target/52. 
+  // If factors are small, base needs to be larger. 
+  // Let's use a generous upper bound.
+  let high = Math.max(100, targetAnnualHrs); 
+
+  // 20 iterations is enough for precision ~ target/2^20
+  for (let i = 0; i < 20; i++) {
+    const mid = (low + high) / 2;
+    state.planBaseVolume = mid;
+    recomputeFormulaVolumes();
+    
+    const currentTotal = state.weeks.reduce((acc, w) => acc + (Number(w.volumeHrs) || 0), 0);
+    
+    if (Math.abs(currentTotal - targetAnnualHrs) < 1) break;
+    
+    if (currentTotal < targetAnnualHrs) {
+      low = mid;
+    } else {
+      high = mid;
+    }
   }
 }
 
@@ -911,6 +943,56 @@ function computeCoachBlockByRules() {
     }
   }
 
+  // Rule: The week before any Build-start is Deload
+  for (let j = 0; j < 52; j++) {
+    if (out[j] !== "Build") continue;
+    const prev = j - 1;
+    if (prev >= 0 && out[prev] !== "Build" && out[prev] !== "Peak" && out[prev] !== "Transition") {
+      setBlock(prev, "Deload");
+    }
+  }
+
+  // Rule: The three weeks before any Deload are Base (unless overridden by Peak/Transition/Build)
+  for (let i = 0; i < 52; i++) {
+    if (out[i] !== "Deload") continue;
+    for (let t = 1; t <= 3; t++) {
+      const k = i - t;
+      if (k >= 0 && out[k] !== "Build" && out[k] !== "Peak" && out[k] !== "Transition") {
+        setBlock(k, "Base");
+      }
+    }
+  }
+
+  // Fixed alignment 3:1 anchored at each Build-start (A/B races):
+  // For each Build-start j, align the preceding segment [prevStart+1 .. j-1]
+  // so that j-1 is Deload, and counting backwards every 4th week is Deload, others Base.
+  const buildStarts = [];
+  for (let j = 0; j < 52; j++) {
+    if (out[j] === "Build") {
+      const prev = j - 1;
+      const isStart = prev < 0 || out[prev] !== "Build";
+      if (isStart) buildStarts.push(j);
+    }
+  }
+  if (buildStarts.length) {
+    for (let idx = 0; idx < buildStarts.length; idx++) {
+      const j = buildStarts[idx];
+      const prevStart = idx > 0 ? buildStarts[idx - 1] : -1;
+      const segStart = Math.max(0, prevStart + 1);
+      const segEnd = Math.max(0, j - 1);
+      const anchorDeload = j - 1;
+      for (let k = segStart; k <= segEnd; k++) {
+        if (out[k] === "Build" || out[k] === "Peak" || out[k] === "Transition") continue;
+        const diff = anchorDeload - k;
+        if (diff % 4 === 0) {
+          setBlock(k, "Deload");
+        } else {
+          setBlock(k, "Base");
+        }
+      }
+    }
+  }
+
   return out;
 }
 
@@ -921,9 +1003,11 @@ function applyCoachBlockRules() {
   for (let i = 0; i < 52; i++) {
     const w = state.weeks[i];
     if (!w) continue;
+    if (w.blockAuto === false) continue;
     const next = blocks[i] || "Base";
     if (normalizeBlockValue(w.block || "") !== next) {
       w.block = next;
+      w.blockAuto = true;
       // If block changes by rule, reset volume factor to auto
       w.volumeFactorAuto = true;
       changed = true;
@@ -962,6 +1046,7 @@ function intensityRelevanceForRace(distanceKm, kind) {
   if (d <= 25) return ["Tempo", "Threshold", "VO2Max", "Anaerobic"];
   return ["Tempo", "Threshold", "VO2Max", "Anaerobic"];
 }
+
 
 function computeCoachPhasesByRules() {
   const out = new Array(52).fill(null).map(() => []);
@@ -2763,12 +2848,14 @@ function persistState() {
     const payload = {
       startDate: formatYMD(state.startDate),
       ytdVolumeHrs: Number.isFinite(state.ytdVolumeHrs) ? state.ytdVolumeHrs : null,
+      planStarted: state.planStarted === true,
       vdot: Number.isFinite(state.vdot) ? state.vdot : null,
       annualVolumeSettings: state.annualVolumeSettings,
       weeks: state.weeks.map((w) => ({
         races: Array.isArray(w.races) ? w.races : [],
         priority: w.priority || "",
         block: w.block || "",
+        blockAuto: w.blockAuto === false ? false : true,
         season: w.season || "",
         phases: normalizePhases(w.phases),
         phasesAuto: w.phasesAuto === false ? false : true,
@@ -2803,7 +2890,9 @@ function applyPersistedTrainingState(persisted) {
     state.startDate = startOfMonday(persistedStartDate);
   }
   state.ytdVolumeHrs = Number.isFinite(persisted?.ytdVolumeHrs) ? persisted.ytdVolumeHrs : null;
+  state.planBaseVolume = Number.isFinite(persisted?.planBaseVolume) ? persisted.planBaseVolume : null;
   state.vdot = Number.isFinite(persisted?.vdot) ? persisted.vdot : null;
+  state.planStarted = persisted?.planStarted === true;
   state.annualVolumeSettings =
     persisted?.annualVolumeSettings && typeof persisted.annualVolumeSettings === "object"
       ? {
@@ -2820,6 +2909,7 @@ function applyPersistedTrainingState(persisted) {
       if (!w) return;
       w.priority = typeof p.priority === "string" ? p.priority : "";
       w.block = typeof p.block === "string" ? normalizeBlockValue(p.block) : w.block;
+       w.blockAuto = p?.blockAuto === false ? false : true;
       w.season = typeof p.season === "string" ? p.season : "";
       w.phases = normalizePhases(p?.phases ?? p?.phase);
       w.phasesAuto = p?.phasesAuto === false ? false : true;
@@ -3382,6 +3472,7 @@ function snapshotForHistory() {
   return {
     startDate: formatYMD(state.startDate),
     ytdVolumeHrs: Number.isFinite(state.ytdVolumeHrs) ? state.ytdVolumeHrs : null,
+    planBaseVolume: Number.isFinite(state.planBaseVolume) ? state.planBaseVolume : null,
     selectedWeekIndex: state.selectedWeekIndex,
     weeks: state.weeks.map((w) => ({
       races: Array.isArray(w.races)
@@ -3394,6 +3485,7 @@ function snapshotForHistory() {
         : [],
       priority: w.priority || "",
       block: w.block || "",
+      blockAuto: w.blockAuto === false ? false : true,
       season: w.season || "",
       phases: normalizePhases(w.phases),
       phasesAuto: w.phasesAuto === false ? false : true,
@@ -3426,6 +3518,7 @@ function applyHistorySnapshot(snapshot) {
   }
 
   state.ytdVolumeHrs = Number.isFinite(snapshot.ytdVolumeHrs) ? snapshot.ytdVolumeHrs : null;
+  state.planBaseVolume = Number.isFinite(snapshot.planBaseVolume) ? snapshot.planBaseVolume : null;
   snapshot.weeks.forEach((p, idx) => {
     const w = state.weeks[idx];
     if (!w) return;
@@ -3441,6 +3534,7 @@ function applyHistorySnapshot(snapshot) {
       : [];
     w.priority = typeof p.priority === "string" ? p.priority : "";
     w.block = typeof p.block === "string" ? p.block : "";
+    w.blockAuto = p?.blockAuto === false ? false : true;
     w.season = typeof p.season === "string" ? p.season : "";
     w.phases = normalizePhases(p?.phases ?? p?.phase);
     w.phasesAuto = p?.phasesAuto === false ? false : true;
@@ -3512,6 +3606,7 @@ function buildInitialWeeks() {
       races: [],
       priority: "",
       block: "Base",
+      blockAuto: true,
       season: "",
       phases: [],
       phasesAuto: true,
@@ -3698,6 +3793,7 @@ function renderCalendar() {
           pushHistory();
           const val = select.value;
           w.block = val;
+          w.blockAuto = false;
           
           // Force auto mode
           w.volumeFactorAuto = true;
@@ -4590,7 +4686,526 @@ function wireTabs() {
   });
 }
 
+function openDesignWizard() {
+  const overlay = el("div", "overlay");
+  const modal = el("div", "modal");
+  
+  const wizardState = {
+    step: 1,
+    startDate: "",
+    annualVolume: "",
+    races: [], // Array of race objects
+    currentRace: { name: "", date: "", distance: "", kind: "", priority: "A" },
+    vdot: null
+  };
+
+  const renderStep = () => {
+    modal.innerHTML = "";
+
+    const title = el("div", "modal__title", "開始設計計劃");
+    const content = el("div", "modal__content");
+    content.style.padding = "20px 0";
+    
+    const actions = el("div", "modal__actions");
+    const nextBtn = el("button", "btn btn--primary", "下一步");
+    const prevBtn = el("button", "btn", "上一步");
+    const cancelBtn = el("button", "btn btn--reset", "取消");
+
+    cancelBtn.onclick = () => {
+      const lbl = document.querySelector('.calRow[data-row-key="monday"] .calLabel .fitText');
+      if (lbl) lbl.textContent = "星期一";
+      overlay.remove();
+    };
+
+    if (wizardState.step === 1) {
+       const label = el("div", "fieldLabel", "1. 計劃開始日期");
+       label.style.fontWeight = "bold";
+       label.style.marginBottom = "8px";
+       
+       const input = document.createElement("input");
+       input.type = "date";
+       input.className = "input";
+       const todayYmd = formatYMD(new Date());
+       input.min = todayYmd;
+       if (wizardState.startDate) {
+         input.value = wizardState.startDate;
+       } else if (state.startDate) {
+         const ymd = formatYMD(state.startDate);
+         input.value = ymd < todayYmd ? todayYmd : ymd;
+       }
+       const setWeekdayLabel = (ymd) => {
+         const lbl = document.querySelector('.calRow[data-row-key="monday"] .calLabel .fitText');
+         const d = parseYMD(ymd);
+         if (!lbl || !d) return;
+         const names = ["星期日","星期一","星期二","星期三","星期四","星期五","星期六"];
+         lbl.textContent = names[d.getDay()] || "星期一";
+       };
+       const desc = el("div", "", "建議開始日期設於星期一或星期日");
+       desc.style.fontSize = "12px";
+       desc.style.color = "var(--muted)";
+       desc.style.marginBottom = "8px";
+       
+       content.appendChild(label);
+       content.appendChild(desc);
+       content.appendChild(input);
+       setWeekdayLabel(input.value || todayYmd);
+       input.addEventListener("input", () => setWeekdayLabel(input.value || todayYmd));
+       input.addEventListener("change", () => setWeekdayLabel(input.value || todayYmd));
+
+       nextBtn.onclick = () => {
+         if (!input.value) return showToast("請選擇日期", { variant: "warn" });
+         if (String(input.value) < todayYmd) {
+           return showToast("請選擇今天或以後的日期", { variant: "warn" });
+         }
+         wizardState.startDate = input.value;
+         wizardState.step++;
+         renderStep();
+       };
+       
+       actions.appendChild(cancelBtn);
+       actions.appendChild(nextBtn);
+
+    } else if (wizardState.step === 2) {
+       const label = el("div", "fieldLabel", "2. 年總訓練量（小時）");
+       label.style.fontWeight = "bold";
+       label.style.marginBottom = "8px";
+
+       const desc = el("div", "", "例如比上一個訓練年度增加10%");
+       desc.style.fontSize = "12px";
+       desc.style.color = "var(--text-muted)";
+       desc.style.marginBottom = "8px";
+
+       const input = document.createElement("input");
+       input.type = "number";
+       input.className = "input";
+       input.placeholder = "例如 360";
+       input.oninput = () => {
+         input.style.borderColor = "";
+       };
+       if (wizardState.annualVolume) input.value = wizardState.annualVolume;
+       else if (state.ytdVolumeHrs) input.value = state.ytdVolumeHrs;
+
+       content.appendChild(label);
+       content.appendChild(desc);
+       content.appendChild(input);
+
+       prevBtn.onclick = () => {
+         wizardState.step--;
+         renderStep();
+       };
+       nextBtn.onclick = () => {
+         if (!input.value) {
+           input.style.borderColor = "var(--warn)";
+           input.focus();
+           return showToast("請輸入年總訓練量", { variant: "warn" });
+         }
+         wizardState.annualVolume = input.value;
+         wizardState.step++;
+         renderStep();
+       };
+
+       actions.appendChild(prevBtn);
+       actions.appendChild(nextBtn);
+
+   } else if (wizardState.step === 3) {
+      const label = el("div", "fieldLabel", "3. 推測VDOT");
+      label.style.fontWeight = "bold";
+      label.style.marginBottom = "8px";
+      content.appendChild(label);
+      
+      const form = el("div");
+      form.style.display = "grid";
+      form.style.gap = "8px";
+      form.style.gridTemplateColumns = "1fr";
+      
+      const distWrap = el("label", "paceField");
+      distWrap.appendChild(el("span", "muted", "測試距離"));
+      const distSelect = document.createElement("select");
+      distSelect.className = "input";
+      [
+        { label: "1 英里", meters: 1609.344 },
+        { label: "3 公里", meters: 3000 },
+        { label: "5 公里", meters: 5000 },
+        { label: "10 公里", meters: 10000 },
+        { label: "半馬", meters: 21097.5 },
+        { label: "全馬", meters: 42195 },
+      ].forEach((o, i) => {
+        const opt = document.createElement("option");
+        opt.value = String(o.meters);
+        opt.textContent = o.label;
+        if (i === 0) opt.selected = true;
+        distSelect.appendChild(opt);
+      });
+      distWrap.appendChild(distSelect);
+      
+      const timeWrap = el("div", "paceField");
+      timeWrap.appendChild(el("span", "muted", "時間（時:分:秒）"));
+      const timeGrid = el("div", "paceTimeGrid");
+      const hEl = document.createElement("input");
+      hEl.className = "input paceTimeInput";
+      hEl.type = "number";
+      hEl.inputMode = "numeric";
+      hEl.min = "0";
+      hEl.placeholder = "時";
+      const mEl = document.createElement("input");
+      mEl.className = "input paceTimeInput";
+      mEl.type = "number";
+      mEl.inputMode = "numeric";
+      mEl.min = "0";
+      mEl.max = "59";
+      mEl.placeholder = "分";
+      const sEl = document.createElement("input");
+      sEl.className = "input paceTimeInput";
+      sEl.type = "number";
+      sEl.inputMode = "numeric";
+      sEl.min = "0";
+      sEl.max = "59";
+      sEl.placeholder = "秒";
+      timeGrid.appendChild(hEl);
+      timeGrid.appendChild(mEl);
+      timeGrid.appendChild(sEl);
+      timeWrap.appendChild(timeGrid);
+      
+      form.appendChild(distWrap);
+      form.appendChild(timeWrap);
+      const meta = el("div", "muted", "");
+      form.appendChild(meta);
+      content.appendChild(form);
+      
+      const parseTimeSec = () => {
+        const h = Number(hEl.value || 0);
+        const m = Number(mEl.value || 0);
+        const s = Number(sEl.value || 0);
+        if (!Number.isFinite(h) || h < 0) return null;
+        if (!Number.isFinite(m) || m < 0 || m > 59) return null;
+        if (!Number.isFinite(s) || s < 0 || s > 59) return null;
+        return Math.floor(h) * 3600 + Math.floor(m) * 60 + Math.floor(s);
+      };
+      const recalc = () => {
+        const distMeters = Number(distSelect.value);
+        const tSec = parseTimeSec();
+        if (!Number.isFinite(distMeters) || distMeters <= 0 || !Number.isFinite(tSec) || tSec <= 0) {
+          wizardState.vdot = null;
+          meta.textContent = "";
+          return;
+        }
+        const v = vdotFromRace(distMeters, tSec);
+        if (Number.isFinite(v) && v > 0) {
+          wizardState.vdot = v;
+          const pace = tSec / (distMeters / 1000);
+          meta.textContent = `測試配速：${formatPaceFromSecondsPerKm(pace)} / 公里 · VDOT：${v.toFixed(1)}`;
+        } else {
+          wizardState.vdot = null;
+          meta.textContent = "";
+        }
+      };
+      distSelect.addEventListener("change", recalc);
+      hEl.addEventListener("input", recalc);
+      mEl.addEventListener("input", recalc);
+      sEl.addEventListener("input", recalc);
+      
+      prevBtn.onclick = () => {
+        wizardState.step--;
+        renderStep();
+      };
+      nextBtn.onclick = () => {
+        const distMeters = Number(distSelect.value);
+        const tSec = parseTimeSec();
+        if (!Number.isFinite(distMeters) || distMeters <= 0 || !Number.isFinite(tSec) || tSec <= 0) {
+          return showToast("請輸入有效的測試距離及時間", { variant: "warn" });
+        }
+        const v = vdotFromRace(distMeters, tSec);
+        if (!Number.isFinite(v) || v <= 0) {
+          return showToast("無法計算（請檢查時間格式）", { variant: "warn" });
+        }
+        wizardState.vdot = v;
+        wizardState.step++;
+        renderStep();
+      };
+      actions.appendChild(prevBtn);
+      actions.appendChild(nextBtn);
+   } else if (wizardState.step === 4) {
+      const label = el("div", "fieldLabel", "4. 輸入比賽");
+      label.style.fontWeight = "bold";
+      label.style.marginBottom = "8px";
+ 
+      // List of added races
+      if (wizardState.races.length > 0) {
+        const list = el("div");
+        list.style.marginBottom = "16px";
+        list.style.border = "1px solid var(--border)";
+        list.style.borderRadius = "4px";
+        list.style.padding = "8px";
+        
+        wizardState.races.forEach((r, idx) => {
+          const row = el("div");
+          row.style.display = "flex";
+          row.style.justifyContent = "space-between";
+          row.style.alignItems = "center";
+          row.style.marginBottom = "4px";
+          row.style.fontSize = "14px";
+          
+          row.textContent = `${r.date} ${r.name} (${r.distance || 0}km) [${r.priority}]`;
+          
+          const del = el("button", "btn btn--small btn--reset", "✕");
+          del.style.color = "var(--warn)";
+          del.onclick = () => {
+            wizardState.races.splice(idx, 1);
+            renderStep();
+          };
+          row.appendChild(del);
+          list.appendChild(row);
+        });
+        content.appendChild(list);
+      }
+ 
+      const formTitle = el("div", "fieldLabel", "４. 輸入比賽");
+      formTitle.style.fontSize = "14px";
+      formTitle.style.fontWeight = "bold";
+      formTitle.style.marginBottom = "4px";
+      content.appendChild(formTitle);
+ 
+      const todayYmdForRace = formatYMD(new Date());
+      const form = el("div");
+      form.style.display = "flex";
+      form.style.flexDirection = "column";
+      form.style.gap = "8px";
+ 
+      const nameInput = document.createElement("input");
+      nameInput.className = "input";
+      nameInput.placeholder = "比賽名稱 (例如: 香港馬拉松)";
+      nameInput.value = wizardState.currentRace.name;
+ 
+      const dateInput = document.createElement("input");
+      dateInput.className = "input";
+      dateInput.type = "date";
+      dateInput.min = todayYmdForRace;
+      dateInput.value = wizardState.currentRace.date && String(wizardState.currentRace.date) < todayYmdForRace
+        ? todayYmdForRace
+        : wizardState.currentRace.date;
+ 
+      const distInput = document.createElement("input");
+      distInput.className = "input";
+      distInput.type = "number";
+      distInput.placeholder = "距離（公里）";
+      distInput.min = "0";
+      distInput.step = "0.1";
+      distInput.value = wizardState.currentRace.distance;
+ 
+      const kindSelect = document.createElement("select");
+      kindSelect.className = "input";
+      [
+        { v: "", t: "項目" },
+        { v: "road", t: "路跑" },
+        { v: "trail", t: "越野跑" },
+      ].forEach(({ v, t }) => {
+        const opt = document.createElement("option");
+        opt.value = v;
+        opt.textContent = t;
+        if (v === wizardState.currentRace.kind) opt.selected = true;
+        kindSelect.appendChild(opt);
+      });
+ 
+      const prioritySelect = document.createElement("select");
+      prioritySelect.className = "input";
+      [
+        { v: "", t: "優先級" },
+        { v: "A", t: "A" },
+        { v: "B", t: "B" },
+        { v: "C", t: "C" },
+      ].forEach(({ v, t }) => {
+        const opt = document.createElement("option");
+        opt.value = v;
+        opt.textContent = t;
+        if (v === wizardState.currentRace.priority) opt.selected = true;
+        prioritySelect.appendChild(opt);
+      });
+ 
+      const updateState = () => {
+        wizardState.currentRace.name = nameInput.value;
+        wizardState.currentRace.date = dateInput.value;
+        wizardState.currentRace.distance = distInput.value;
+        wizardState.currentRace.kind = kindSelect.value;
+        wizardState.currentRace.priority = prioritySelect.value;
+      };
+      nameInput.oninput = updateState;
+      dateInput.oninput = updateState;
+      distInput.oninput = updateState;
+      kindSelect.onchange = updateState;
+      prioritySelect.onchange = updateState;
+ 
+      form.appendChild(nameInput);
+      form.appendChild(dateInput);
+      form.appendChild(distInput);
+      form.appendChild(kindSelect);
+      form.appendChild(prioritySelect);
+      content.appendChild(form);
+ 
+      const addBtn = el("button", "btn", "加入此比賽");
+      addBtn.style.marginTop = "8px";
+      addBtn.style.width = "100%";
+      addBtn.onclick = () => {
+        if (!nameInput.value) return showToast("請輸入比賽名稱", { variant: "warn" });
+        if (!dateInput.value) return showToast("請選擇比賽日期", { variant: "warn" });
+        if (String(dateInput.value) < todayYmdForRace) return showToast("請選擇今天或以後的日期", { variant: "warn" });
+        if (!kindSelect.value) return showToast("請選擇項目", { variant: "warn" });
+        if (!prioritySelect.value) return showToast("請選擇優先級", { variant: "warn" });
+ 
+        wizardState.races.push({ ...wizardState.currentRace });
+        wizardState.currentRace = { name: "", date: "", distance: "", kind: "", priority: "A" };
+        renderStep();
+      };
+      content.appendChild(addBtn);
+ 
+      prevBtn.onclick = () => {
+        wizardState.step--;
+        renderStep();
+      };
+      const finishBtn = el("button", "btn btn--primary", "完成及建立");
+      finishBtn.onclick = () => {
+        const hasPending = nameInput.value || dateInput.value;
+        if (hasPending) {
+          if (!nameInput.value || !dateInput.value || !kindSelect.value || !prioritySelect.value) {
+            return showToast("請先加入比賽或清空輸入欄", { variant: "warn" });
+          }
+          if (String(dateInput.value) < todayYmdForRace) {
+            return showToast("請選擇今天或以後的日期", { variant: "warn" });
+          }
+          wizardState.races.push({ ...wizardState.currentRace });
+        }
+        applyWizard(wizardState);
+        overlay.remove();
+      };
+ 
+      actions.appendChild(prevBtn);
+      actions.appendChild(finishBtn);
+    }
+
+    modal.appendChild(title);
+    modal.appendChild(content);
+    modal.appendChild(actions);
+  };
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  renderStep();
+}
+
+function applyWizard(data) {
+  pushHistory();
+
+  if (data.startDate) {
+    const d = parseYMD(data.startDate);
+    if (d) {
+      const monday = startOfMonday(d);
+      state.startDate = monday;
+      for (let i = 0; i < state.weeks.length; i++) {
+        const w = state.weeks[i];
+        if (!w) continue;
+        w.monday = addDays(monday, i * 7);
+      }
+    }
+  }
+
+  const vol = Number(data.annualVolume);
+  if (Number.isFinite(vol) && vol > 0) {
+    state.ytdVolumeHrs = vol;
+  } else {
+    state.ytdVolumeHrs = null;
+  }
+  syncAnnualVolumeInputs();
+
+  if (Array.isArray(data.races)) {
+    data.races.forEach(r => {
+      if (!r.name || !r.date) return;
+
+      const raceDate = r.date;
+      const raceName = r.name;
+      const raceDist = Number(r.distance);
+      const raceKind = r.kind || "road";
+      const racePriority = r.priority || "A";
+      
+      const d = parseYMD(raceDate);
+      if (d && state.startDate) {
+         const diff = d.getTime() - state.startDate.getTime();
+         const days = Math.floor((diff + MS_PER_DAY/2) / MS_PER_DAY);
+         const weekIdx = Math.floor(days / 7);
+         
+         if (weekIdx >= 0 && weekIdx < 52) {
+            const w = state.weeks[weekIdx];
+            if (w) {
+                if (!Array.isArray(w.races)) w.races = [];
+                w.races.push({
+                   name: raceName,
+                   date: raceDate,
+                   distanceKm: Number.isFinite(raceDist) ? raceDist : null,
+                   kind: raceKind
+                });
+                w.priority = racePriority;
+                w.volumeFactorAuto = true;
+            }
+         }
+      }
+    });
+  }
+
+  if (Number.isFinite(Number(data.vdot)) && Number(data.vdot) > 0) {
+    state.vdot = Number(data.vdot);
+  }
+
+  reassignAllRacesByDate();
+   applyCoachAutoRules();
+   refreshAutoVolumeFactors();
+   
+   // Apply optimization if volume is set
+   if (state.ytdVolumeHrs) {
+      optimizePlanBaseVolume(state.ytdVolumeHrs);
+   } else {
+      recomputeFormulaVolumes();
+   }
+   
+   state.planStarted = true;
+   persistState();
+   updateHeader();
+   renderCalendar();
+  renderCharts();
+  renderWeekDetails();
+  syncPlanStartedUi();
+  showToast("已建立計劃！");
+}
+
+function syncPlanStartedUi() {
+  const startBtn = document.getElementById("startWizardBtn");
+  const annualVolumeWrap = document.querySelector(".annualVolumeField");
+  const annualVolumeInput = document.getElementById("annualVolumeInput");
+  const annualVolumeApplyBtn = document.getElementById("annualVolumeApplyBtn");
+  const annualVolumeClearBtn = document.getElementById("annualVolumeClearBtn");
+  const autoFillAllBtn = document.getElementById("autoFillAllBtn");
+  const raceInputBtn = document.getElementById("raceInputBtn");
+  const exportPdfBtn = document.getElementById("exportPdfBtn");
+  const controls = [
+    annualVolumeWrap,
+    annualVolumeInput,
+    annualVolumeApplyBtn,
+    annualVolumeClearBtn,
+    autoFillAllBtn,
+    raceInputBtn,
+    exportPdfBtn,
+  ];
+  if (startBtn) startBtn.style.display = state.planStarted ? "none" : "";
+  controls.forEach((el) => {
+    if (!el) return;
+    el.style.display = state.planStarted ? "" : "none";
+  });
+}
+
 function wireButtons() {
+  const startWizardBtn = document.getElementById("startWizardBtn");
+  if (startWizardBtn) {
+    startWizardBtn.addEventListener("click", () => openDesignWizard());
+  }
+  syncPlanStartedUi();
+
   const connectBtn = document.getElementById("connectBtn");
   const connectMeta = document.getElementById("connectMeta");
 
@@ -4632,12 +5247,16 @@ function wireButtons() {
       }
       pushHistory();
       state.ytdVolumeHrs = v;
+      
+      // Recalibrate plan based on new target
+      optimizePlanBaseVolume(state.ytdVolumeHrs);
+
       persistState();
       updateHeader();
       renderCalendar();
       renderCharts();
       renderWeekDetails();
-      showToast("已更新年總訓練量設定");
+      showToast("已更新年總訓練量設定並重新計算課表");
     });
   }
   if (annualVolumeClearBtn && annualVolumeInput) {
@@ -4745,6 +5364,7 @@ function wireButtons() {
         w.races = [];
         w.priority = "";
         w.block = "Base";
+        w.blockAuto = true;
         w.season = "";
         w.phases = [];
         w.phasesAuto = true;
@@ -4760,11 +5380,13 @@ function wireButtons() {
     }
 
     state.selectedWeekIndex = 0;
+    state.planStarted = false;
     persistState();
     updateHeader();
     renderCalendar();
     renderWeekPicker();
     renderWeekDetails();
+    syncPlanStartedUi();
     showToast("已重設表格內容 (保留每日課表)");
   });
 
@@ -4818,6 +5440,7 @@ function wireButtons() {
 }
 
 async function init() {
+  if (typeof state.planStarted !== "boolean") state.planStarted = false;
   state.ytdVolumeHrs = null;
   state.annualVolumeSettings = { startWeeklyHrs: null, maxUpPct: 12, maxDownPct: 25 };
   buildInitialWeeks();

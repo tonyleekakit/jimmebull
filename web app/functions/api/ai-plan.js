@@ -4,6 +4,9 @@ function jsonResponse(data, init) {
   const headers = new Headers(init?.headers || {});
   if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json; charset=utf-8");
   if (!headers.has("X-Server-Version")) headers.set("X-Server-Version", SERVER_VERSION);
+  if (!headers.has("Access-Control-Allow-Origin")) headers.set("Access-Control-Allow-Origin", "*");
+  if (!headers.has("Access-Control-Allow-Methods")) headers.set("Access-Control-Allow-Methods", "POST,OPTIONS");
+  if (!headers.has("Access-Control-Allow-Headers")) headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   return new Response(JSON.stringify(data), { ...init, headers });
 }
 
@@ -368,46 +371,6 @@ async function checkRateLimit(request, env) {
   return { ok: true };
 }
 
-async function runGemini(prompt, env) {
-  if (!env || !env.GEMINI_API_KEY) {
-    return { ok: false, status: 500, error: "Missing GEMINI_API_KEY" };
-  }
-
-  const model = typeof env.GEMINI_MODEL === "string" && env.GEMINI_MODEL.trim() ? env.GEMINI_MODEL.trim() : "gemini-1.5-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`;
-
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.4 },
-    }),
-  });
-
-  let data = null;
-  try {
-    data = await resp.json();
-  } catch {
-    data = null;
-  }
-
-  if (!resp.ok) {
-    const message =
-      (typeof data?.error?.message === "string" && data.error.message) ||
-      (typeof data?.message === "string" && data.message) ||
-      "Gemini API error";
-    return { ok: false, status: 502, error: message, upstreamStatus: resp.status };
-  }
-
-  const text =
-    data?.candidates?.[0]?.content?.parts?.map((p) => (typeof p?.text === "string" ? p.text : "")).join("") ||
-    data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-    "";
-
-  return { ok: true, text };
-}
-
 async function runWorkersAi(prompt, env) {
   const ai = env?.AI;
   if (!ai || typeof ai.run !== "function") {
@@ -443,9 +406,7 @@ async function runWorkersAi(prompt, env) {
 }
 
 async function generateText(prompt, env) {
-  const provider = typeof env?.AI_PROVIDER === "string" ? env.AI_PROVIDER.trim().toLowerCase() : "gemini";
-  if (provider === "cf" || provider === "workers_ai" || provider === "workers-ai") return runWorkersAi(prompt, env);
-  return runGemini(prompt, env);
+  return runWorkersAi(prompt, env);
 }
 
 export async function onRequestPost(ctx) {
@@ -510,22 +471,15 @@ export async function onRequestPost(ctx) {
 
     const gen = await generateText(prompt, env);
     if (!gen || !gen.ok) {
-      const status = Number(gen?.status) || 502;
-      const upstreamStatus = Number.isFinite(Number(gen?.upstreamStatus)) ? Number(gen.upstreamStatus) : undefined;
       return jsonResponse(
-        { error: typeof gen?.error === "string" ? gen.error : "AI service error", upstreamStatus, range: { startIndex, endIndex } },
-        { status },
+        { updates: { weeks: [] }, error: typeof gen?.error === "string" ? gen.error : "AI unavailable", range: { startIndex, endIndex } },
+        { status: 200 },
       );
     }
 
     const text = typeof gen?.text === "string" ? gen.text : "";
     const updates = parseFirstValidUpdates(text);
-    if (!updates) {
-      return jsonResponse(
-        { error: "Invalid updates JSON", rawText: String(text).slice(0, 3000), range: { startIndex, endIndex }, serverVersion: SERVER_VERSION },
-        { status: 502 },
-      );
-    }
+    if (!updates) return jsonResponse({ updates: { weeks: [] }, range: { startIndex, endIndex }, serverVersion: SERVER_VERSION }, { status: 200 });
 
     const inRangeWeeks = Array.isArray(updates.weeks)
       ? updates.weeks.filter((w) => {
@@ -560,4 +514,14 @@ export async function onRequestPost(ctx) {
   };
 
   return jsonResponse({ updates: sanitized, serverVersion: SERVER_VERSION }, { status: 200 });
+}
+
+export async function onRequestOptions(ctx) {
+  return jsonResponse({}, { status: 204 });
+}
+
+export async function onRequestGet(ctx) {
+  const { env } = ctx;
+  const model = typeof env?.CF_AI_MODEL === "string" && env.CF_AI_MODEL.trim() ? env.CF_AI_MODEL.trim() : "@cf/meta/llama-3.1-8b-instruct";
+  return jsonResponse({ ok: true, provider: "cf", model, serverVersion: SERVER_VERSION }, { status: 200 });
 }
