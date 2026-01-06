@@ -13,7 +13,6 @@
     <header class="topbar">
       <nav class="tabs" aria-label="主要">
         <button class="tab is-active" type="button" data-tab="plan">訓練調控</button>
-        <button class="tab" type="button" data-tab="howto">如何使用</button>
         <a href="./pace-calculator.html" class="tab">配速計算機</a>
         <button class="tab" type="button" data-tab="blog">部落格</button>
       </nav>
@@ -76,102 +75,7 @@
         <div id="chartsRoot" class="chartsGrid" aria-label="圖表內容"></div>
       </section>
 
-      <section id="tab-howto" class="tabPanel" aria-label="如何使用">
-        <div class="howtoIntro calendarSummary" aria-label="如何使用說明">
-          <div class="howtoIntro__title">如何使用「訓練調控」</div>
-          <div class="muted">下方每個步驟配合截圖作教學配圖，逐步講解「訓練調控」頁面功能。</div>
-        </div>
 
-        <div class="howtoGrid" aria-label="教學步驟">
-          <div class="chartCard howtoStep" aria-label="設定起始日期">
-            <div class="chartCard__title">1. 設定起始日期（第 1 週星期一）</div>
-            <div class="muted">在表格「星期一」列的第 1 格，選擇起始星期一；系統會自動更新後續 52 週日期。</div>
-            <div class="howtoShot" data-howto-shot-key="startDate">
-              <div class="howtoShot__frame">
-                <img class="howtoShot__img" alt="起始日期設定截圖" data-static-src="./assets/howto/step-1.png" />
-                <div class="howtoShot__placeholder">截圖：起始日期設定</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="chartCard howtoStep" aria-label="設定年總訓練量">
-            <div class="chartCard__title">2. 設定年總訓練量（可選）</div>
-            <div class="muted">在頁面上方輸入「年總訓練量（小時）」並按「套用」，上方會顯示「已分配/差額」。</div>
-            <div class="howtoShot" data-howto-shot-key="annualVolume">
-              <div class="howtoShot__frame">
-                <img class="howtoShot__img" alt="年總訓練量截圖" data-static-src="./assets/howto/step-2.png" />
-                <div class="howtoShot__placeholder">截圖：年總訓練量設定</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="chartCard howtoStep" aria-label="設定週期與比賽">
-            <div class="chartCard__title">3. 設定週期與比賽</div>
-            <div class="muted">用「週期」列設定基礎/建立/巔峰/減量/過渡；按「輸入比賽」加入比賽後，系統會自動更新相關週的週期/強度安排。</div>
-            <div class="howtoShot" data-howto-shot-key="blocksAndRaces">
-              <div class="howtoShot__frame">
-                <img class="howtoShot__img" alt="週期與比賽截圖" data-static-src="./assets/howto/step-3.png" />
-                <div class="howtoShot__placeholder">截圖：週期與比賽</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="chartCard howtoStep" aria-label="設定計劃訓練量">
-            <div class="chartCard__title">4. 設定每週「計劃訓練量（小時）」</div>
-            <div class="muted">點擊表格「計劃訓練量（小時）」欄可開啟視窗：第 1–4 週可直接輸入；第 5–52 週預設用公式（過去四週平均 × 參數），參數會跟隨週期/比賽週而自動變動。</div>
-            <div class="howtoShot" data-howto-shot-key="plannedVolumeModal">
-              <div class="howtoShot__frame">
-                <img class="howtoShot__img" alt="計劃訓練量視窗截圖" data-static-src="./assets/howto/step-4.png" />
-                <div class="howtoShot__placeholder">截圖：計劃訓練量視窗</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="chartCard howtoStep" aria-label="自動填充課表">
-            <div class="chartCard__title">5. 自動填充每日課表（Day 卡片）</div>
-            <div class="muted">設定完訓練量後，按「自動填充範例課表」會根據設定的週期與比賽，自動生成 52 週的範例課表，並覆蓋所有已有 Day 卡片內容。</div>
-            <div class="howtoShot" data-howto-shot-key="autoFill">
-              <div class="howtoShot__frame">
-                <img class="howtoShot__img" alt="自動填充截圖" data-static-src="./assets/howto/step-5.png" />
-                <div class="howtoShot__placeholder">截圖：自動填充課表</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="chartCard howtoStep" aria-label="查看風險指標">
-            <div class="chartCard__title">6. 查看風險指標：單調度 / ACWR</div>
-            <div class="muted">表格下方的「單調度」與「ACWR」會根據 Day 卡片內容計算；當 ACWR &gt; 1.5 會以紅底提示，代表負荷增加較快。</div>
-            <div class="howtoShot" data-howto-shot-key="metrics">
-              <div class="howtoShot__frame">
-                <img class="howtoShot__img" alt="單調度與 ACWR 截圖" data-static-src="./assets/howto/step-6.png" />
-                <div class="howtoShot__placeholder">截圖：單調度與 ACWR</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="chartCard howtoStep" aria-label="編輯 Day 卡片">
-            <div class="chartCard__title">7. 編輯 Day 卡片內容</div>
-            <div class="muted">在「每週詳情」區可以：調整當日訓練數量、分鐘/強度、備註，並可拖曳左側把手重新排序。你手動修改後，系統不會自動覆寫，除非再次按自動填充。</div>
-            <div class="howtoShot" data-howto-shot-key="dayCards">
-              <div class="howtoShot__frame">
-                <img class="howtoShot__img" alt="Day 卡片截圖" data-static-src="./assets/howto/step-7.png" />
-                <div class="howtoShot__placeholder">截圖：Day 卡片</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="chartCard howtoStep" aria-label="匯出 PDF">
-            <div class="chartCard__title">8. 匯出 PDF</div>
-            <div class="muted">按「匯出 PDF」可輸出表格與圖表作打印/分享（建議先設定好比賽、訓練量與 Day 卡片）。</div>
-            <div class="howtoShot" data-howto-shot-key="exportPdf">
-              <div class="howtoShot__frame">
-                <img class="howtoShot__img" alt="匯出 PDF 截圖" data-static-src="./assets/howto/step-8.png" />
-                <div class="howtoShot__placeholder">截圖：匯出 PDF</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
 
       <!-- 配速計算機 Tab Content Moved to pace-calculator.html -->
 

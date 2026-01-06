@@ -159,7 +159,6 @@ const PACE_TEST_OPTIONS = [
 ];
 
 const ACTIVE_TAB_KEY = "activeTab";
-const HOWTO_SHOT_PREFIX = "howtoShot_v1:";
 
 const WORKOUT_HELPER_CONFIG = {
   long: {
@@ -751,16 +750,7 @@ function computeAndRenderPaceCalculator() {
   });
   renderPaceTable(predsRoot, predRows);
 
-  if (authUser && Number.isFinite(vdot)) {
-      setTimeout(() => {
-        if (confirm(`計算完成！VDOT 為 ${vdot.toFixed(1)}。\n是否將此數值儲存為您的個人 VDOT？`)) {
-          state.vdot = vdot;
-          persistState();
-          updateHeader();
-          showToast("已更新您的 VDOT 設定", { variant: "success" });
-        }
-      }, 50);
-    }
+  // 不再將 VDOT 寫入訓練調控頁面或用戶狀態
 }
 
 function resetPaceCalculator() {
@@ -2849,7 +2839,6 @@ function persistState() {
       startDate: formatYMD(state.startDate),
       ytdVolumeHrs: Number.isFinite(state.ytdVolumeHrs) ? state.ytdVolumeHrs : null,
       planStarted: state.planStarted === true,
-      vdot: Number.isFinite(state.vdot) ? state.vdot : null,
       annualVolumeSettings: state.annualVolumeSettings,
       weeks: state.weeks.map((w) => ({
         races: Array.isArray(w.races) ? w.races : [],
@@ -2891,7 +2880,6 @@ function applyPersistedTrainingState(persisted) {
   }
   state.ytdVolumeHrs = Number.isFinite(persisted?.ytdVolumeHrs) ? persisted.ytdVolumeHrs : null;
   state.planBaseVolume = Number.isFinite(persisted?.planBaseVolume) ? persisted.planBaseVolume : null;
-  state.vdot = Number.isFinite(persisted?.vdot) ? persisted.vdot : null;
   state.planStarted = persisted?.planStarted === true;
   state.annualVolumeSettings =
     persisted?.annualVolumeSettings && typeof persisted.annualVolumeSettings === "object"
@@ -3670,19 +3658,6 @@ function updateHeader() {
     
     plannedVolume52El.textContent = "";
     plannedVolume52El.appendChild(document.createTextNode(text));
-
-    if (authUser) {
-      plannedVolume52El.appendChild(document.createTextNode(" · VDOT: "));
-      if (Number.isFinite(state.vdot)) {
-        plannedVolume52El.appendChild(document.createTextNode(state.vdot.toFixed(1)));
-      } else {
-        const warn = document.createElement("span");
-        warn.style.color = "#ef4444";
-        warn.style.fontWeight = "bold";
-        warn.textContent = '請到"配速計算機"推測VDOT';
-        plannedVolume52El.appendChild(warn);
-      }
-    }
   }
 }
 
@@ -5149,9 +5124,7 @@ function applyWizard(data) {
     });
   }
 
-  if (Number.isFinite(Number(data.vdot)) && Number(data.vdot) > 0) {
-    state.vdot = Number(data.vdot);
-  }
+  // 不記錄設計精靈推測的 VDOT 至訓練調控狀態
 
   reassignAllRacesByDate();
    applyCoachAutoRules();
@@ -5451,7 +5424,7 @@ async function init() {
   renderWeekDetails();
   renderCharts();
   wireTabs();
-  wireHowTo();
+
   wireButtons();
   wireBlogSearch();
   await wireAuth();
