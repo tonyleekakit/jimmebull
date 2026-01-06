@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-HK">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>部落格 | 訓練調控</title>
+    <meta name="description" content="部落格：跑步訓練、恢復、風險管理等文章與教學資源，支援關鍵字搜尋。" />
+    <link rel="icon" type="image/png" href="./assets/logo.png" />
+    <link rel="apple-touch-icon" href="./assets/logo.png" />
+    <link rel="stylesheet" href="./styles.css?v=2.7" />
+    <link rel="canonical" href="https://trainingmon.com/blog.html" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://trainingmon.com/blog.html" />
+    <meta property="og:title" content="部落格 | 訓練調控" />
+    <meta property="og:description" content="跑步訓練與風險管理文章索引，支援搜尋與快速導覽。" />
+    <meta property="og:image" content="https://trainingmon.com/assets/logo.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <header class="topbar">
+      <nav class="tabs" aria-label="主要">
+        <a href="./index.html" class="tab">訓練調控</a>
+        <a href="./pace-calculator.html" class="tab">配速計算機</a>
+        <span class="tab is-active">部落格</span>
+      </nav>
+      <a class="brand" href="./index.html" aria-label="返回訓練調控">
+        <img class="brand__img" src="./assets/logo.png" alt="Logo" onerror="this.style.display='none';" />
+      </a>
+      <button id="authBtn" class="btn btn--primary authBtn" type="button">登入</button>
+    </header>
+
+    <main class="page">
+      <section id="tab-blog" class="tabPanel is-active" aria-label="部落格">
+        <div class="calendarSummary" aria-label="部落格說明">
+          <div class="howtoIntro__title">部落格</div>
+          <div class="muted">跑步訓練、恢復、風險管理等文章</div>
+        </div>
+        <div class="blogGrid" aria-label="部落格內容">
+          <div class="chartCard" aria-label="文章列表">
+            <div class="chartCard__title">文章列表</div>
+            <div id="blogList" class="blogList">
+              <a class="blogItem" href="./blog/how-to-increase-mileage.html">
+                <div class="blogItem__text">每週跑量應該加多少？10% 加量法為何未必適合你（附更安全做法）</div>
+                <div class="blogItem__meta">2026-01-01 · 傑哥, 香港中文大學-運動醫學碩士 · Instagram/Threads: @kitgordont</div>
+              </a>
+              <a class="blogItem" href="./blog/borg-rpe-scale-guide.html">
+                <div class="blogItem__text">沒有教練也能變強：Borg RPE 體感強度量表實戰教學（附網站自動計算負荷）</div>
+                <div class="blogItem__meta">2026-01-04 · 傑哥, 香港中文大學-運動醫學碩士 · Instagram/Threads: @kitgordont</div>
+              </a>
+            </div>
+          </div>
+          <div class="chartCard" aria-label="文章內容">
+            <div id="blogTitle" class="chartCard__title"></div>
+            <div id="blogMeta" class="muted"></div>
+            <div id="blogArticle"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      try {
+        const ld = {
+          "@context": "https://schema.org",
+          "@type": "CollectionPage",
+          "name": "部落格",
+          "url": "https://trainingmon.com/blog.html"
+        };
+        const script = document.createElement("script");
+        script.type = "application/ld+json";
+        script.text = JSON.stringify(ld);
+        document.head.appendChild(script);
+      } catch(e) {}
+    </script>
+    <script>
+      globalThis.__SUPABASE__ = {
+        url: "https://yonmaiyxjewsdnyvkzvm.supabase.co",
+        anonKey: "sb_publishable_JjjPDuMbjhS6NsOiNWn9YQ_5VrjOFqN",
+      };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./app.js?v=21"></script>
+  </body>
+</html>

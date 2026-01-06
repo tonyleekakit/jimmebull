@@ -5424,9 +5424,7 @@ async function init() {
   renderWeekDetails();
   renderCharts();
   wireTabs();
-
   wireButtons();
-  wireBlogSearch();
   await wireAuth();
   if (!authUser) {
     clearPersistedTrainingState();
@@ -5485,8 +5483,10 @@ function renderBlog(filterText = "") {
 
   listRoot.replaceChildren();
   const term = String(filterText || "").trim().toLowerCase();
+  const input = document.getElementById("blogSearchInput");
+  const userSearch = input && String(input.dataset.user || "") === "1";
 
-  const filtered = BLOG_POSTS.filter((p) => {
+  let filtered = BLOG_POSTS.filter((p) => {
     if (!term) return true;
     const t = (p.title || "").toLowerCase();
     const e = (p.excerpt || "").toLowerCase();
@@ -5494,8 +5494,12 @@ function renderBlog(filterText = "") {
   });
 
   if (filtered.length === 0) {
-    listRoot.appendChild(el("div", "muted", "沒有找到符合的文章"));
-    return;
+    if (!userSearch) {
+      filtered = BLOG_POSTS.slice();
+    } else {
+      listRoot.appendChild(el("div", "muted", "沒有找到符合的文章"));
+      return;
+    }
   }
 
   filtered.forEach((p) => {
@@ -5522,17 +5526,16 @@ function renderBlog(filterText = "") {
   });
   
   // Clean up title if switching back from article view (legacy cleanup)
-  document.title = "訓練調控";
-}
-
-function wireBlogSearch() {
-  const input = document.getElementById("blogSearchInput");
-  if (!input) return;
-  input.addEventListener("input", (e) => {
-    renderBlog(e.target.value);
-  });
+  document.title = "部落格";
 }
 
 // Legacy functions removed for pure static linking
 function updateBlogUrl(postId) {}
 function checkBlogUrl() {}
+
+// Ensure blog list renders only after BLOG_POSTS is defined
+try {
+  if (document.getElementById("blogList")) {
+    renderBlog("");
+  }
+} catch {}
