@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-HK">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>聯絡我們 | 訓練調控</title>
+    <meta name="description" content="聯絡我們：分享你的意見，幫助我們改進訓練調控工具。" />
+    <link rel="icon" type="image/png" href="./assets/logo.png" />
+    <link rel="apple-touch-icon" href="./assets/logo.png" />
+    <link rel="stylesheet" href="./styles.css?v=2.7" />
+    <link rel="canonical" href="https://trainingmon.com/contact.html" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://trainingmon.com/contact.html" />
+    <meta property="og:title" content="聯絡我們 | 訓練調控" />
+    <meta property="og:description" content="分享你的意見，幫助我們改進訓練調控工具。" />
+    <meta property="og:image" content="https://trainingmon.com/assets/logo.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <style>
+      .contactForm {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        padding: 16px 0;
+      }
+      .contactField {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .contactField label {
+        font-weight: bold;
+        color: var(--text-main);
+      }
+      .contactInput {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--text-main);
+        font-family: inherit;
+        font-size: 14px;
+      }
+      .contactInput:focus {
+        outline: 2px solid var(--accent);
+        border-color: transparent;
+      }
+      .contactTextarea {
+        min-height: 200px;
+        resize: vertical;
+      }
+      .contactActions {
+        display: flex;
+        justify-content: flex-end;
+        padding-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <nav class="tabs" aria-label="主要">
+        <a href="./index.html" class="tab">訓練調控</a>
+        <a href="./pace-calculator.html" class="tab">配速計算機</a>
+        <a href="./blog.html" class="tab">部落格</a>
+        <span class="tab is-active">聯絡我們</span>
+      </nav>
+      <a class="brand" href="./index.html" aria-label="返回訓練調控">
+        <img class="brand__img" src="./assets/logo.png" alt="Logo" onerror="this.style.display='none';" />
+      </a>
+      <button id="authBtn" class="btn btn--primary authBtn" type="button">登入</button>
+    </header>
+
+    <main class="page">
+      <section id="tab-contact" class="tabPanel is-active" aria-label="聯絡我們">
+        <div class="chartCard" aria-label="聯絡表單">
+          <div class="chartCard__title" style="text-align: center;">你的意見，可以令我們做得更好！</div>
+          
+          <form id="contactForm" class="contactForm">
+            <div class="contactField">
+              <label for="subject">主題：</label>
+              <input type="text" id="subject" class="contactInput" placeholder="請輸入主題" required />
+            </div>
+            
+            <div class="contactField">
+              <label for="content">內容：</label>
+              <textarea id="content" class="contactInput contactTextarea" placeholder="請輸入內容" required></textarea>
+            </div>
+
+            <div class="contactActions">
+              <button type="submit" class="btn btn--primary">提交</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      document.getElementById('contactForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const subject = document.getElementById('subject').value;
+        const body = document.getElementById('content').value;
+        
+        // Using mailto to open email client
+        const mailtoLink = `mailto:jimmebull@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        
+        window.location.href = mailtoLink;
+      });
+
+      // Basic auth button handling (copied from other pages logic roughly, usually handled by app.js but app.js is heavy)
+      // Since app.js handles auth globally usually, we should probably include it or replicate minimal auth logic if needed.
+      // However, app.js seems to be designed for the SPA parts.
+      // Let's include app.js for consistency and auth button state, but we might need to be careful if it tries to render things that don't exist.
+      // app.js has init() which looks for specific IDs.
+    </script>
+    <script>
+      globalThis.__SUPABASE__ = {
+        url: "https://yonmaiyxjewsdnyvkzvm.supabase.co",
+        anonKey: "sb_publishable_JjjPDuMbjhS6NsOiNWn9YQ_5VrjOFqN",
+      };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- We include app.js to handle auth state and header logic if any -->
+    <script src="./app.js?v=21"></script>
+  </body>
+</html>
