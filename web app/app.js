@@ -3726,8 +3726,6 @@ function renderCalendar() {
           const input = document.createElement("input");
           input.className = "calInput";
           input.type = "date";
-          input.readOnly = true;
-          input.addEventListener("keydown", (e) => e.preventDefault());
           input.value = formatYMD(w.monday);
           input.addEventListener("click", (e) => e.stopPropagation());
           input.addEventListener("change", () => {
@@ -3738,12 +3736,6 @@ function renderCalendar() {
               return;
             }
 
-            const day = nextDate.getDay();
-            if (day !== 0 && day !== 1) {
-              showToast("開始日期只可為星期一或星期日", { variant: "warn", durationMs: 2000 });
-              input.value = formatYMD(state.startDate);
-              return;
-            }
             const nextMonday = startOfMonday(nextDate);
             if (nextMonday.getTime() === state.startDate.getTime()) return;
 
@@ -4710,8 +4702,6 @@ function openDesignWizard() {
        input.className = "input";
        const todayYmd = formatYMD(new Date());
        input.min = todayYmd;
-       input.readOnly = true;
-       input.addEventListener("keydown", (e) => e.preventDefault());
        if (wizardState.startDate) {
          input.value = wizardState.startDate;
        } else if (state.startDate) {
@@ -4725,7 +4715,7 @@ function openDesignWizard() {
          const names = ["星期日","星期一","星期二","星期三","星期四","星期五","星期六"];
          lbl.textContent = names[d.getDay()] || "星期一";
        };
-       const desc = el("div", "", "開始日期只可選星期一或星期日");
+       const desc = el("div", "", "建議開始日期設於星期一或星期日");
        desc.style.fontSize = "12px";
        desc.style.color = "var(--muted)";
        desc.style.marginBottom = "8px";
@@ -4734,43 +4724,24 @@ function openDesignWizard() {
        content.appendChild(desc);
        content.appendChild(input);
        setWeekdayLabel(input.value || todayYmd);
-       let lastAllowedYmd = input.value || todayYmd;
-       input.addEventListener("input", () => {
-         const ymd = input.value || todayYmd;
-         const d = parseYMD(ymd);
-         if (!d) return;
-         const day = d.getDay();
-         if (day === 0 || day === 1) {
-           lastAllowedYmd = ymd;
-         }
-         setWeekdayLabel(ymd);
-       });
-       input.addEventListener("change", () => {
-         const ymd = input.value || todayYmd;
-         const d = parseYMD(ymd);
-         if (!d) return;
-         const day = d.getDay();
-         if (day !== 0 && day !== 1) {
-           showToast("開始日期只可為星期一或星期日", { variant: "warn", durationMs: 2000 });
-           input.value = lastAllowedYmd;
-           setWeekdayLabel(lastAllowedYmd);
-           return;
-         }
-         lastAllowedYmd = ymd;
-         setWeekdayLabel(ymd);
-       });
+       input.addEventListener("input", () => setWeekdayLabel(input.value || todayYmd));
+       input.addEventListener("change", () => setWeekdayLabel(input.value || todayYmd));
 
       nextBtn.onclick = () => {
         if (!input.value) return showToast("請選擇日期", { variant: "warn" });
         if (String(input.value) < todayYmd) {
           return showToast("請選擇今天或以後的日期", { variant: "warn" });
         }
-        const picked = parseYMD(input.value);
-        const day = picked?.getDay?.() ?? -1;
-        if (day !== 0 && day !== 1) {
-          input.style.borderColor = "var(--warn)";
-          return showToast("開始日期只可為星期一或星期日", { variant: "warn" });
+        
+        // 限制只可選擇星期一或星期日
+        const d = parseYMD(input.value);
+        if (d) {
+          const day = d.getDay(); // 0=Sun, 1=Mon
+          if (day !== 0 && day !== 1) {
+            return showToast("計劃開始日期必須是星期一或星期日", { variant: "warn" });
+          }
         }
+
         wizardState.startDate = input.value;
         wizardState.step++;
         renderStep();
