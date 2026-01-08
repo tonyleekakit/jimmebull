@@ -4733,12 +4733,12 @@ function openDesignWizard() {
           return showToast("請選擇今天或以後的日期", { variant: "warn" });
         }
         
-        // 限制只可選擇星期一或星期日
+        // 限制只可選擇星期一
         const d = parseYMD(input.value);
         if (d) {
           const day = d.getDay(); // 0=Sun, 1=Mon
-          if (day !== 0 && day !== 1) {
-            return showToast("計劃開始日期必須是星期一或星期日", { variant: "warn" });
+          if (day !== 1) {
+            return showToast("計劃開始日期必須是星期一", { variant: "warn" });
           }
         }
 
@@ -5467,6 +5467,15 @@ async function init() {
 init();
 
 const BLOG_POSTS = [
+  {
+    id: "p3",
+    title: "【2026最完整科學教學】如何從0打造個人跑步計劃?沒有教練也能進步神速!",
+    date: "2026-01-08",
+    url: "./blog/blog(8-1-2026).html",
+    excerpt: "打造屬於自己的全年跑步訓練藍圖，從基礎期到賽季階段循序漸進提升能力。",
+    author: "傑哥, 香港中文大學-運動醫學碩士",
+    social: "Instagram/Threads: @kitgordont"
+  },
   {
     id: "p1",
     title: "每週跑量應該加多少？10% 加量法為何未必適合你（附更安全做法）",
