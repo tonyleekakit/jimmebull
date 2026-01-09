@@ -162,11 +162,11 @@ const ACTIVE_TAB_KEY = "activeTab";
 
 const WORKOUT_HELPER_CONFIG = {
   long: {
-    label: "長課 (RPE 3-4)",
+    label: "有氧耐力 (RPE 3-4)",
     rpe: 3,
     rpeText: "3-4",
     type: "continuous",
-    durationMin: 60,
+    durationMin: 30,
     durationStep: 5,
     durationMax: 180
   },
@@ -833,6 +833,25 @@ function normalizeBlockValue(value) {
   return v;
 }
 
+function normalizeRacePriorityValue(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (raw === "重要") return "A";
+  if (raw === "不重要") return "C";
+  const v = raw.toUpperCase();
+  if (v === "A") return "A";
+  if (v === "B") return "A";
+  if (v === "C") return "C";
+  return "";
+}
+
+function racePriorityLabelZh(value) {
+  const v = normalizeRacePriorityValue(value);
+  if (v === "A") return "重要";
+  if (v === "C") return "不重要";
+  return "";
+}
+
 const PHASE_OPTIONS = ["Aerobic Endurance", "Tempo", "Threshold", "VO2Max", "Anaerobic", "Peaking", "Deload"];
 
 const BLOCK_LABELS_ZH = {
@@ -901,21 +920,22 @@ function computeCoachBlockByRules() {
 
   state.weeks.forEach((w) => {
     if (!w) return;
-    const p = String(w.priority || "").trim().toUpperCase();
-    if (p !== "A" && p !== "B") return;
+    const p = normalizeRacePriorityValue(w.priority);
+    if (p !== "A") return;
     if (!Array.isArray(w.races) || w.races.length === 0) return;
     const idx = clamp(Number(w.index), 0, 51);
 
-    if (p === "A") {
-      setBlock(idx, "Peak");
-      setBlock(idx - 1, "Peak");
-      setBlock(idx + 1, "Transition");
-      for (let d = 2; d <= 4; d++) setBlock(idx - d, "Build");
-      return;
-    }
-
     setBlock(idx, "Peak");
-    for (let d = 1; d <= 3; d++) setBlock(idx - d, "Build");
+    setBlock(idx - 1, "Peak");
+    setBlock(idx + 1, "Transition");
+    // 賽前第 5 週為減量期
+    setBlock(idx - 5, "Deload");
+    // 其餘賽前週為建立期（排除第 5 週）
+    for (let d = 2; d <= 8; d++) {
+      if (d === 5) continue;
+      setBlock(idx - d, "Build");
+    }
+    return;
   });
 
   let baseCount = 0;
@@ -1037,6 +1057,537 @@ function intensityRelevanceForRace(distanceKm, kind) {
   return ["Tempo", "Threshold", "VO2Max", "Anaerobic"];
 }
 
+function baseFocusGeneric(totalCycles, cycleIndex) {
+  const t = Number(totalCycles);
+  const c = Number(cycleIndex);
+  if (!Number.isFinite(t) || !Number.isFinite(c) || t < 2 || c < 1 || c > t) return "";
+
+  if (t >= 13) {
+    if (c >= 1 && c <= 3) return "Anaerobic";
+    if (c >= 4 && c <= 6) return "VO2Max";
+    if (c >= 7 && c <= 9) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 12) {
+    if (c >= 1 && c <= 3) return "Anaerobic";
+    if (c >= 4 && c <= 6) return "VO2Max";
+    if (c >= 7 && c <= 9) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 11) {
+    if (c >= 1 && c <= 2) return "Anaerobic";
+    if (c >= 3 && c <= 5) return "VO2Max";
+    if (c >= 6 && c <= 8) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 10) {
+    if (c >= 1 && c <= 2) return "Anaerobic";
+    if (c >= 3 && c <= 4) return "VO2Max";
+    if (c >= 5 && c <= 7) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 9) {
+    if (c >= 1 && c <= 2) return "Anaerobic";
+    if (c >= 3 && c <= 4) return "VO2Max";
+    if (c >= 5 && c <= 6) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 8) {
+    if (c >= 1 && c <= 2) return "Anaerobic";
+    if (c >= 3 && c <= 4) return "VO2Max";
+    if (c >= 5 && c <= 6) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 7) {
+    if (c === 1) return "Anaerobic";
+    if (c >= 2 && c <= 3) return "VO2Max";
+    if (c >= 4 && c <= 5) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 6) {
+    if (c === 1) return "Anaerobic";
+    if (c === 2) return "VO2Max";
+    if (c >= 3 && c <= 4) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 5) {
+    if (c === 1) return "Anaerobic";
+    if (c === 2) return "VO2Max";
+    if (c === 3) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 4) {
+    if (c === 1) return "Anaerobic";
+    if (c === 2) return "VO2Max";
+    if (c === 3) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 3) {
+    if (c === 1) return "VO2Max";
+    if (c === 2) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 2) {
+    if (c === 1) return "VO2Max";
+    return "Threshold";
+  }
+  return "Tempo";
+}
+
+function cycleIndexInfoForWeek(weekIndex, raceWeekIndex) {
+  const j = Number(raceWeekIndex);
+  if (!Number.isFinite(j) || j <= 0) return null;
+
+  // 找出此賽事「前一場重要賽事」的結束週，做為本次循環計算的起點
+  // 若無前一場賽事，預設從 0 開始
+  let startIndex = 0;
+  for (let r = j - 1; r >= 0; r--) {
+    const wk = state.weeks[r];
+    const pr = normalizeRacePriorityValue(wk?.priority);
+    if (pr === "A") {
+      startIndex = r + 1;
+      break;
+    }
+  }
+
+  const cycles = [];
+  // 從 startIndex 開始掃描到 raceWeekIndex (j)
+  for (let k = startIndex; k < j; k++) {
+    const wk = state.weeks[k];
+    const isDeload = normalizeBlockValue(wk?.block || "") === "Deload";
+    if (!isDeload) continue;
+    let bcount = 0;
+    // 往前數 Base，但不超過 startIndex
+    for (let p = k - 1; p >= startIndex; p--) {
+      const bp = state.weeks[p];
+      if (normalizeBlockValue(bp?.block || "") === "Base") bcount++;
+      else break;
+    }
+    const isFirst = cycles.length === 0;
+    if (bcount >= 3 || (isFirst && bcount >= 1)) {
+      const start = k - bcount;
+      const end = k;
+      cycles.push({ start, end });
+    }
+  }
+  if (!cycles.length) return null;
+  for (let idx = 0; idx < cycles.length; idx++) {
+    const seg = cycles[idx];
+    if (Number(weekIndex) >= seg.start && Number(weekIndex) <= seg.end) {
+      return { totalCycles: cycles.length, cycleIndex: idx + 1 };
+    }
+  }
+  // 若該週不在任何循環內（例如最後幾個 Base 週後面接 Peak 而非 Deload），
+  // 視同最後一個循環或依照剩餘週數處理？
+  // 這裡回傳 null 會導致預設行為（僅 Aerobic Endurance），
+  // 但依照截圖狀況，可能會有 orphan base weeks。
+  // 若希望 orphan weeks 也被分配重點，可視為下一個循環（cycleIndex + 1）？
+  // 但目前邏輯是：若不在循環內，回傳 cycleIndex: null -> baseFocusFor5k 預設 return Tempo (若 c 不在範圍)。
+  // 為了讓 orphan weeks (如 48-49) 也能分配，我們可以檢查它是否屬於「最後一個未完成的循環」。
+  
+  // 檢查是否為最後一段 Base (無 Deload)
+  if (Number(weekIndex) > cycles[cycles.length - 1].end && Number(weekIndex) < j) {
+    // 檢查該週是否為 Base
+    if (normalizeBlockValue(state.weeks[weekIndex]?.block || "") === "Base") {
+       // 視為第 N+1 個循環
+       return { totalCycles: cycles.length + 1, cycleIndex: cycles.length + 1 };
+    }
+  }
+
+  return { totalCycles: cycles.length, cycleIndex: null };
+}
+
+function baseFocusFor10k(totalCycles, cycleIndex) {
+  const t = Number(totalCycles);
+  const c = Number(cycleIndex);
+  if (!Number.isFinite(t) || !Number.isFinite(c) || t < 2 || c < 1 || c > t) return "";
+  if (t === 13) {
+    if (c >= 1 && c <= 3) return "Anaerobic";
+    if (c >= 4 && c <= 6) return "VO2Max";
+    if (c >= 7 && c <= 9) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 12) {
+    if (c >= 1 && c <= 3) return "Anaerobic";
+    if (c >= 7 && c <= 9) return "VO2Max";
+    if (c >= 10 && c <= 12) return "Threshold";
+    return (c >= 4 && c <= 6) ? "Tempo" : "Tempo";
+  }
+  if (t === 11) {
+    if (c >= 1 && c <= 2) return "Anaerobic";
+    if (c >= 6 && c <= 8) return "VO2Max";
+    if (c >= 9 && c <= 11) return "Threshold";
+    return (c >= 3 && c <= 5) ? "Tempo" : "Tempo";
+  }
+  if (t === 10) {
+    if (c >= 1 && c <= 2) return "Anaerobic";
+    if (c >= 5 && c <= 7) return "VO2Max";
+    if (c >= 8 && c <= 10) return "Threshold";
+    return (c >= 3 && c <= 4) ? "Tempo" : "Tempo";
+  }
+  if (t === 9) {
+    if (c >= 1 && c <= 2) return "Anaerobic";
+    if (c >= 5 && c <= 6) return "VO2Max";
+    if (c >= 7 && c <= 9) return "Threshold";
+    return (c >= 3 && c <= 4) ? "Tempo" : "Tempo";
+  }
+  if (t === 8) {
+    if (c >= 1 && c <= 2) return "Anaerobic";
+    if (c >= 5 && c <= 6) return "VO2Max";
+    if (c >= 7 && c <= 8) return "Threshold";
+    return (c >= 3 && c <= 4) ? "Tempo" : "Tempo";
+  }
+  if (t === 7) {
+    if (c === 1) return "Anaerobic";
+    if (c >= 4 && c <= 5) return "VO2Max";
+    if (c >= 6 && c <= 7) return "Threshold";
+    return (c >= 2 && c <= 3) ? "Tempo" : "Tempo";
+  }
+  if (t === 6) {
+    if (c === 1) return "Anaerobic";
+    if (c >= 3 && c <= 4) return "VO2Max";
+    if (c >= 5 && c <= 6) return "Threshold";
+    return c === 2 ? "Tempo" : "Tempo";
+  }
+  if (t === 5) {
+    if (c === 1) return "Anaerobic";
+    if (c === 3) return "VO2Max";
+    if (c >= 4 && c <= 5) return "Threshold";
+    return c === 2 ? "Tempo" : "Tempo";
+  }
+  if (t === 4) {
+    if (c === 1) return "Anaerobic";
+    if (c === 3) return "VO2Max";
+    if (c === 4) return "Threshold";
+    return c === 2 ? "Tempo" : "Tempo";
+  }
+  if (t === 3) {
+    if (c === 2) return "VO2Max";
+    if (c === 3) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 2) {
+    if (c === 1) return "Anaerobic";
+    return "Tempo";
+  }
+  return "Tempo";
+}
+
+function baseFocusFor15k(totalCycles, cycleIndex) {
+  const t = Number(totalCycles);
+  const c = Number(cycleIndex);
+  if (!Number.isFinite(t) || !Number.isFinite(c) || t < 2 || c < 1 || c > t) return "";
+  
+  if (t === 13) {
+    if (c >= 1 && c <= 3) return "Anaerobic";
+    if (c >= 4 && c <= 6) return "VO2Max";
+    if (c >= 7 && c <= 9) return "Tempo";
+    if (c >= 10 && c <= 13) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 12) {
+    if (c >= 1 && c <= 3) return "Anaerobic";
+    if (c >= 4 && c <= 6) return "VO2Max";
+    if (c >= 7 && c <= 9) return "Tempo";
+    if (c >= 10 && c <= 12) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 11) {
+    if (c >= 1 && c <= 2) return "Anaerobic";
+    if (c >= 3 && c <= 5) return "VO2Max";
+    if (c >= 6 && c <= 8) return "Tempo";
+    if (c >= 9 && c <= 11) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 10) {
+    if (c >= 1 && c <= 2) return "Anaerobic";
+    if (c >= 3 && c <= 4) return "VO2Max";
+    if (c >= 5 && c <= 7) return "Tempo";
+    if (c >= 8 && c <= 10) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 9) {
+    if (c >= 1 && c <= 2) return "Anaerobic";
+    if (c >= 3 && c <= 4) return "VO2Max";
+    if (c >= 5 && c <= 6) return "Tempo";
+    if (c >= 7 && c <= 9) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 8) {
+    if (c >= 1 && c <= 2) return "Anaerobic";
+    if (c >= 3 && c <= 4) return "VO2Max";
+    if (c >= 5 && c <= 6) return "Tempo";
+    if (c >= 7 && c <= 8) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 7) {
+    if (c === 1) return "Anaerobic";
+    if (c >= 2 && c <= 3) return "VO2Max";
+    if (c >= 4 && c <= 5) return "Tempo";
+    if (c >= 6 && c <= 7) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 6) {
+    if (c === 1) return "Anaerobic";
+    if (c === 2) return "VO2Max";
+    if (c >= 3 && c <= 4) return "Tempo";
+    if (c >= 5 && c <= 6) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 5) {
+    if (c === 1) return "Anaerobic";
+    if (c === 2) return "VO2Max";
+    if (c === 3) return "Tempo";
+    if (c >= 4 && c <= 5) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 4) {
+    if (c === 1) return "Anaerobic";
+    if (c === 2) return "VO2Max";
+    if (c === 3) return "Tempo";
+    if (c === 4) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 3) {
+    if (c === 1) return "VO2Max";
+    if (c === 2) return "Tempo";
+    if (c === 3) return "Threshold";
+    return "Tempo";
+  }
+  if (t === 2) {
+    if (c === 1) return "Anaerobic";
+    if (c === 2) return "VO2Max";
+    return "Tempo";
+  }
+  return "Tempo";
+}
+
+function baseFocusForHalfMarathon(totalCycles, cycleIndex) {
+  const t = Number(totalCycles);
+  const c = Number(cycleIndex);
+  if (!Number.isFinite(t) || !Number.isFinite(c) || t < 2 || c < 1 || c > t) return "";
+  
+  if (t === 13) {
+    if (c >= 1 && c <= 3) return "Anaerobic";
+    if (c >= 4 && c <= 6) return "VO2Max";
+    if (c >= 7 && c <= 9) return "Threshold";
+    if (c >= 10 && c <= 13) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 12) {
+    if (c >= 1 && c <= 3) return "Anaerobic";
+    if (c >= 4 && c <= 6) return "VO2Max";
+    if (c >= 7 && c <= 9) return "Threshold";
+    if (c >= 10 && c <= 12) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 11) {
+    if (c >= 1 && c <= 2) return "Anaerobic";
+    if (c >= 3 && c <= 5) return "VO2Max";
+    if (c >= 6 && c <= 8) return "Threshold";
+    if (c >= 9 && c <= 11) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 10) {
+    if (c >= 1 && c <= 2) return "Anaerobic";
+    if (c >= 3 && c <= 4) return "VO2Max";
+    if (c >= 5 && c <= 7) return "Threshold";
+    if (c >= 8 && c <= 10) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 9) {
+    if (c >= 1 && c <= 2) return "Anaerobic";
+    if (c >= 3 && c <= 4) return "VO2Max";
+    if (c >= 5 && c <= 6) return "Threshold";
+    if (c >= 7 && c <= 9) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 8) {
+    if (c >= 1 && c <= 2) return "Anaerobic";
+    if (c >= 3 && c <= 4) return "VO2Max";
+    if (c >= 5 && c <= 6) return "Threshold";
+    if (c >= 7 && c <= 8) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 7) {
+    if (c === 1) return "Anaerobic";
+    if (c >= 2 && c <= 3) return "VO2Max";
+    if (c >= 4 && c <= 5) return "Threshold";
+    if (c >= 6 && c <= 7) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 6) {
+    if (c === 1) return "Anaerobic";
+    if (c === 2) return "VO2Max";
+    if (c >= 3 && c <= 4) return "Threshold";
+    if (c >= 5 && c <= 6) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 5) {
+    if (c === 1) return "Anaerobic";
+    if (c === 2) return "VO2Max";
+    if (c === 3) return "Threshold";
+    if (c >= 4 && c <= 5) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 4) {
+    if (c === 1) return "Anaerobic";
+    if (c === 2) return "VO2Max";
+    if (c === 3) return "Threshold";
+    if (c === 4) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 3) {
+    if (c === 1) return "VO2Max";
+    if (c === 2) return "Threshold";
+    if (c === 3) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 2) {
+    if (c === 1) return "Anaerobic";
+    if (c === 2) return "VO2Max";
+    return "Tempo";
+  }
+  return "Tempo";
+}
+
+function baseFocusForMarathon(totalCycles, cycleIndex) {
+  const t = Number(totalCycles);
+  const c = Number(cycleIndex);
+  if (!Number.isFinite(t) || !Number.isFinite(c) || t < 2 || c < 1 || c > t) return "";
+  
+  if (t === 13) {
+    if (c >= 1 && c <= 3) return "Anaerobic";
+    if (c >= 4 && c <= 6) return "VO2Max";
+    if (c >= 7 && c <= 9) return "Threshold";
+    if (c >= 10 && c <= 13) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 12) {
+    if (c >= 1 && c <= 3) return "Anaerobic";
+    if (c >= 4 && c <= 6) return "VO2Max";
+    if (c >= 7 && c <= 9) return "Threshold";
+    if (c >= 10 && c <= 12) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 11) {
+    if (c >= 1 && c <= 2) return "Anaerobic";
+    if (c >= 3 && c <= 5) return "VO2Max";
+    if (c >= 6 && c <= 8) return "Threshold";
+    if (c >= 9 && c <= 11) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 10) {
+    if (c >= 1 && c <= 2) return "Anaerobic";
+    if (c >= 3 && c <= 4) return "VO2Max";
+    if (c >= 5 && c <= 7) return "Threshold";
+    if (c >= 8 && c <= 10) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 9) {
+    if (c >= 1 && c <= 2) return "Anaerobic";
+    if (c >= 3 && c <= 4) return "VO2Max";
+    if (c >= 5 && c <= 6) return "Threshold";
+    if (c >= 7 && c <= 9) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 8) {
+    if (c >= 1 && c <= 2) return "Anaerobic";
+    if (c >= 3 && c <= 4) return "VO2Max";
+    if (c >= 5 && c <= 6) return "Threshold";
+    if (c >= 7 && c <= 8) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 7) {
+    if (c === 1) return "Anaerobic";
+    if (c >= 2 && c <= 3) return "VO2Max";
+    if (c >= 4 && c <= 5) return "Threshold";
+    if (c >= 6 && c <= 7) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 6) {
+    if (c === 1) return "Anaerobic";
+    if (c === 2) return "VO2Max";
+    if (c >= 3 && c <= 4) return "Threshold";
+    if (c >= 5 && c <= 6) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 5) {
+    if (c === 1) return "Anaerobic";
+    if (c === 2) return "VO2Max";
+    if (c === 3) return "Threshold";
+    if (c >= 4 && c <= 5) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 4) {
+    if (c === 1) return "Anaerobic";
+    if (c === 2) return "VO2Max";
+    if (c === 3) return "Threshold";
+    if (c === 4) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 3) {
+    if (c === 1) return "VO2Max";
+    if (c === 2) return "Threshold";
+    if (c === 3) return "Tempo";
+    return "Tempo";
+  }
+  if (t === 2) {
+    if (c === 1) return "Anaerobic";
+    if (c === 2) return "VO2Max";
+    return "Tempo";
+  }
+  return "Tempo";
+}
+
+function getGenericCycleInfo(weekIndex) {
+  const idx = Number(weekIndex);
+  if (!Number.isFinite(idx) || idx < 0 || idx > 51) return null;
+  
+  const isBaseOrDeload = (k) => {
+    const w = state.weeks[k];
+    if (!w) return false;
+    const b = normalizeBlockValue(w.block || "");
+    return b === "Base" || b === "Deload";
+  };
+
+  if (!isBaseOrDeload(idx)) return null;
+
+  // Find start of this contiguous Base/Deload sequence
+  let start = idx;
+  while (start > 0 && isBaseOrDeload(start - 1)) {
+    start--;
+  }
+
+  // Find end
+  let end = idx;
+  while (end < 51 && isBaseOrDeload(end + 1)) {
+    end++;
+  }
+
+  // Count cycles in this sequence
+  let totalCycles = 0;
+  let currentCycleIndex = 0;
+  let c = 0;
+  let cycleStart = start;
+  
+  for (let k = start; k <= end; k++) {
+    const w = state.weeks[k];
+    const b = normalizeBlockValue(w.block || "");
+    
+    // Cycle ends if we hit Deload OR we hit the end
+    if (b === "Deload" || k === end) {
+      c++;
+      if (idx >= cycleStart && idx <= k) {
+        currentCycleIndex = c;
+      }
+      cycleStart = k + 1;
+    }
+  }
+  
+  totalCycles = c;
+  return { totalCycles, cycleIndex: currentCycleIndex };
+}
 
 function computeCoachPhasesByRules() {
   const out = new Array(52).fill(null).map(() => []);
@@ -1047,8 +1598,8 @@ function computeCoachPhasesByRules() {
     for (let j = i; j < 52; j++) {
       const w = state.weeks[j];
       if (!w) continue;
-      const pr = String(w.priority || "").trim().toUpperCase();
-      if (pr !== "A" && pr !== "B") continue;
+      const pr = normalizeRacePriorityValue(w.priority);
+      if (pr !== "A") continue;
       const races = Array.isArray(w.races) ? w.races : [];
       const candidates = races
         .map((r) => {
@@ -1073,12 +1624,41 @@ function computeCoachPhasesByRules() {
     if (block === "Base") {
       const race = nextTargetRaceByWeek[i];
       const raceWeekIdx = nextTargetRaceWeekIndex[i];
+      if (Number.isFinite(raceWeekIdx)) {
+        const info = cycleIndexInfoForWeek(i, raceWeekIdx);
+        if (info && Number.isFinite(info.totalCycles)) {
+          const extra = baseFocusGeneric(info.totalCycles, info.cycleIndex || 1);
+          if (extra) {
+            out[i] = ["Aerobic Endurance", extra];
+            continue;
+          }
+        }
+      } else {
+        const info = getGenericCycleInfo(i);
+        if (info && Number.isFinite(info.totalCycles)) {
+          const extra = baseFocusGeneric(info.totalCycles, info.cycleIndex || 1);
+          if (extra) {
+            out[i] = ["Aerobic Endurance", extra];
+            continue;
+          }
+        }
+      }
       const buildPhases = normalizePhases(phasesForRaceDistance(race?.distanceKm, race?.kind));
       const relevance = intensityRelevanceForRace(race?.distanceKm, race?.kind);
       const candidates = relevance.filter((p) => !buildPhases.includes(p));
-      const weeksToRace = Number.isFinite(raceWeekIdx) ? Math.max(0, raceWeekIdx - i) : null;
-      const pickIdx = Number.isFinite(weeksToRace) ? clamp(Math.floor(weeksToRace / 4), 0, candidates.length - 1) : 0;
-      const extra = candidates[pickIdx] || candidates[0] || "";
+      const infoAny = Number.isFinite(raceWeekIdx) ? cycleIndexInfoForWeek(i, raceWeekIdx) : null;
+      let extra = "";
+      if (infoAny && Number.isFinite(infoAny.totalCycles) && candidates.length > 0) {
+        const total = Math.max(1, Number(infoAny.totalCycles));
+        const idxIn = Math.max(1, Number(infoAny.cycleIndex || 1));
+        const len = candidates.length;
+        const pos = clamp(len - Math.ceil((idxIn * len) / total), 0, len - 1);
+        extra = candidates[pos] || candidates[0] || "";
+      } else {
+        const weeksToRace = Number.isFinite(raceWeekIdx) ? Math.max(0, raceWeekIdx - i) : null;
+        const pickIdx = Number.isFinite(weeksToRace) ? clamp(Math.floor(weeksToRace / 4), 0, candidates.length - 1) : 0;
+        extra = candidates[pickIdx] || candidates[0] || "";
+      }
       out[i] = extra ? ["Aerobic Endurance", extra] : ["Aerobic Endurance"];
       continue;
     }
@@ -1224,6 +1804,81 @@ function minuteCapsForPlan(plan, options) {
   if (t === "Quality") return { min: minQuality, max: maxQuality };
   if (t === "Race") return { min: 30, max: 240 };
   return { min: 0, max: 0 };
+}
+
+function normalizePlansNoShortAerobic(plans, options) {
+  const minAerobic = Number.isFinite(WORKOUT_HELPER_CONFIG?.long?.durationMin) ? Number(WORKOUT_HELPER_CONFIG.long.durationMin) : 30;
+  if (!Array.isArray(plans) || !Number.isFinite(minAerobic) || minAerobic <= 0) return plans;
+
+  const mins = plans.map((p) => Math.max(0, Math.round(Number(p?.minutes) || 0)));
+  const caps = plans.map((p) => minuteCapsForPlan(p, options));
+
+  const typeAt = (i) => String(plans[i]?.type || "");
+  const easyIdx = mins.map((_, i) => i).filter((i) => typeAt(i) === "Easy");
+  const longIdx = mins.map((_, i) => i).filter((i) => typeAt(i) === "Long");
+  const qualityIdx = mins.map((_, i) => i).filter((i) => typeAt(i) === "Quality");
+  const raceIdx = mins.map((_, i) => i).filter((i) => typeAt(i) === "Race");
+
+  const addTo = (i, amount) => {
+    if (amount <= 0) return 0;
+    const hi = caps[i].max;
+    const room = Math.max(0, hi - mins[i]);
+    const take = Math.min(room, amount);
+    mins[i] += take;
+    return take;
+  };
+
+  for (const i of easyIdx) {
+    if (!(mins[i] > 0 && mins[i] < minAerobic)) continue;
+    const need = minAerobic - mins[i];
+
+    let donor = -1;
+    let best = -1;
+    for (const j of easyIdx) {
+      if (j === i) continue;
+      if (mins[j] >= minAerobic + need && mins[j] > best) {
+        best = mins[j];
+        donor = j;
+      }
+    }
+
+    if (donor >= 0) {
+      mins[donor] -= need;
+      mins[i] += need;
+      continue;
+    }
+
+    const removed = mins[i];
+    mins[i] = 0;
+
+    if (plans[i] && typeof plans[i] === "object") {
+      plans[i].type = "Rest";
+      plans[i].minutes = 0;
+      plans[i].phase = "";
+      plans[i].race = null;
+      if ("rpeOverride" in plans[i]) plans[i].rpeOverride = 1;
+    }
+
+    let remaining = removed;
+    const easyReceivers = easyIdx.filter((j) => j !== i && mins[j] >= minAerobic).sort((a, b) => mins[b] - mins[a]);
+    for (const j of easyReceivers) {
+      if (remaining <= 0) break;
+      remaining -= addTo(j, remaining);
+    }
+    if (remaining > 0) {
+      for (const group of [longIdx, qualityIdx, raceIdx]) {
+        for (const j of group) {
+          if (remaining <= 0) break;
+          remaining -= addTo(j, remaining);
+        }
+      }
+    }
+  }
+
+  for (let i = 0; i < plans.length; i++) {
+    if (plans[i] && typeof plans[i] === "object") plans[i].minutes = mins[i];
+  }
+  return plans;
 }
 
 function applyLoadConstraintsToPlans(weekIndex, plans, ctx) {
@@ -1426,6 +2081,7 @@ function applyLoadConstraintsToPlans(weekIndex, plans, ctx) {
       matchRaceWeekTotalLoad(8);
     }
 
+    normalizePlansNoShortAerobic(base, easyCapOptions);
     return { plans: base, volumeHrsOverride: updateVolumeOverride() };
   }
 
@@ -1488,22 +2144,38 @@ function applyLoadConstraintsToPlans(weekIndex, plans, ctx) {
     (block === "Deload" && chronicDaily && final.acwr !== null && final.acwr >= 0.8) ||
     (chronicDaily && final.acwr !== null && final.acwr >= 1.5);
   const volumeHrsOverride = changed || needVolumeOverride ? updateVolumeOverride() : null;
+  normalizePlansNoShortAerobic(base, options);
   return { plans: base, volumeHrsOverride };
 }
 
 function raceEntriesForWeek(week) {
   if (!week) return [];
-  const monday = week.monday instanceof Date ? week.monday : null;
-  if (!monday) return [];
+  // Ensure monday is a Date object, handling potential string from JSON
+  const monday = week.monday instanceof Date ? week.monday : (week.monday ? new Date(week.monday) : null);
+  if (!monday || isNaN(monday.getTime())) return [];
+
   const races = Array.isArray(week.races) ? week.races : [];
   const out = [];
   for (const r of races) {
     const name = String(r?.name || "").trim();
     const date = String(r?.date || "").trim();
-    if (!name || !date) continue;
+    // Relaxed name check - if name is empty, it's still a valid race if date exists
+    if (!date) continue;
+    
+    // Assign default name if missing
+    if (!name) {
+       // Optional: could derive name from distance/kind if needed, but empty is fine if logic handles it
+       // or just let it be empty string
+    }
+
     const d = parseYMD(date);
     if (!d) continue;
-    const dayIndex = Math.round((d.getTime() - monday.getTime()) / MS_PER_DAY);
+
+    // Use a more robust diff calculation to handle potential timezone/DST offsets
+    const diffMs = d.getTime() - monday.getTime();
+    const dayIndex = Math.round(diffMs / MS_PER_DAY);
+    
+    // Allow slight tolerance if needed, but strict 0-6 should work if dates are correct
     if (!Number.isFinite(dayIndex) || dayIndex < 0 || dayIndex > 6) continue;
     const dist = Number(r?.distanceKm);
     const distanceKm = Number.isFinite(dist) && dist > 0 ? dist : null;
@@ -1519,8 +2191,8 @@ function nextTargetRaceFromWeekIndex(fromWeekIndex) {
   for (let j = start; j < 52; j++) {
     const w = state.weeks[j];
     if (!w) continue;
-    const pr = String(w.priority || "").trim().toUpperCase();
-    if (pr !== "A" && pr !== "B") continue;
+    const pr = normalizeRacePriorityValue(w.priority);
+    if (pr !== "A") continue;
     const races = Array.isArray(w.races) ? w.races : [];
     const candidates = races
       .map((r) => {
@@ -1556,6 +2228,16 @@ function estimateRaceMinutes(distanceKm, kind) {
   const d = Number(distanceKm);
   const k = String(kind || "").trim();
   if (!Number.isFinite(d) || d <= 0) return 75;
+
+  // 若非越野跑且有 VDOT，嘗試用 VDOT 預估完賽時間
+  if (k !== "trail" && state.vdot && state.vdot > 0) {
+    const sec = solveRaceTimeSeconds(d * 1000, state.vdot);
+    if (Number.isFinite(sec) && sec > 0) {
+      // 允許範圍放寬到 10 ~ 600 分鐘 (10小時)，以涵蓋超馬或慢速全馬
+      return clamp(Math.round(sec / 60), 10, 600);
+    }
+  }
+
   const minPerKm = k === "trail" ? 9 : 6.5;
   const raw = d * minPerKm;
   return clamp(Math.round(raw), 20, 240);
@@ -1575,6 +2257,41 @@ function buildAutoNoteBodyForPlan(plan) {
   return lines.join("\n").trim();
 }
 
+function getDistRangeStr(minutes, vdot, loFrac, hiFrac) {
+  if (!Number.isFinite(vdot) || vdot <= 0 || minutes <= 0) return "";
+  const slowSec = paceSecondsPerKmFromVdotFraction(vdot, loFrac);
+  const fastSec = paceSecondsPerKmFromVdotFraction(vdot, hiFrac);
+  if (!Number.isFinite(slowSec) || !Number.isFinite(fastSec)) return "";
+  
+  // 計算平均配速與預估距離 (公尺)
+  const avgPace = (slowSec + fastSec) / 2; 
+  const avgSpeed = 60 / avgPace; // km/min
+  const distM = minutes * avgSpeed * 1000;
+
+  // 使用者指定的標準運動場距離
+  const stds = [100, 200, 300, 400, 800, 1000, 1200, 1600, 2000, 3000, 4000];
+  
+  let closest = stds[0];
+  let minDiff = Math.abs(distM - closest);
+  
+  for (const s of stds) {
+    const diff = Math.abs(distM - s);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closest = s;
+    }
+  }
+
+  const paceRange = `${formatPaceFromSecondsPerKm(slowSec)}–${formatPaceFromSecondsPerKm(fastSec)}`;
+  
+  // 若距離遠大於列表最大值 (例如 > 4500m 的長距離跑)，則顯示 km
+  if (distM > 4500) {
+    return `（約 ${(distM / 1000).toFixed(2)}km @ ${paceRange}/km）`;
+  }
+  
+  return `（約 ${closest}m @ ${paceRange}/km）`;
+}
+
 function sessionPlanForDay(weekIndex, day, ctx) {
   const minutes = Math.max(0, Math.round(Number(day?.minutes) || 0));
   const type = String(day?.type || "").trim();
@@ -1582,6 +2299,9 @@ function sessionPlanForDay(weekIndex, day, ctx) {
   const race = day?.race || null;
   const block = String(ctx?.block || "").trim();
   const rpeOverride = Number.isFinite(Number(day?.rpeOverride)) ? clamp(Number(day.rpeOverride), 1, 10) : null;
+
+  // Use state.vdot if available
+  const vdot = Number.isFinite(state.vdot) ? state.vdot : null;
 
   if (type === "Rest" || minutes <= 0) {
     return { zone: 1, rpe: 1, workoutMinutes: 0, noteBody: buildAutoNoteBodyForPlan({ title: "休息／伸展", minutes: 0, rpeText: "—" }) };
@@ -1592,7 +2312,7 @@ function sessionPlanForDay(weekIndex, day, ctx) {
     const distText = race.distanceKm ? `${race.distanceKm}km` : "";
     const meta = [distText, kindText].filter(Boolean).join(" · ");
     const title = meta ? `比賽：${race.name}（${meta}）` : `比賽：${race.name}`;
-    const details = ["熱身 15' + 比賽 + 放鬆 10'"];
+    const details = ["熱身 15分鐘 + 比賽 + 放鬆 10分鐘"];
     const workoutMinutes = minutes;
     return { zone: 6, rpe: rpeOverride ?? 10, workoutMinutes, noteBody: buildAutoNoteBodyForPlan({ title, details, minutes: workoutMinutes, rpeText: "9–10" }) };
   }
@@ -1624,7 +2344,8 @@ function sessionPlanForDay(weekIndex, day, ctx) {
   if (phase === "Tempo") {
     const idx = phaseStreakIndex(weekIndex, phase);
     const main = minutes > 0 ? minutes : clamp(30 + idx * 5, 30, 45);
-    const details = [`主課：節奏跑 ${main}'（30–45'，可每週 +5'）`, "另加：熱身／放鬆"];
+    const distInfo = vdot ? getDistRangeStr(main, vdot, 0.78, 0.86) : "";
+    const details = [`主課：節奏跑 ${main}分鐘${distInfo}（30–45分鐘，可每週 +5分鐘）`, "另加：熱身／放鬆"];
     return { zone: 3, rpe: rpeOverride ?? 6, workoutMinutes: main, noteBody: buildAutoNoteBodyForPlan({ title: "節奏", details, minutes: main, rpeText: "5–6" }) };
   }
   if (phase === "Threshold") {
@@ -1633,7 +2354,8 @@ function sessionPlanForDay(weekIndex, day, ctx) {
     const restMin = Math.max(1, Math.round(repMin / 4));
     const sets = minutes > 0 ? Math.max(1, Math.round(minutes / repMin)) : clamp(3 + Math.floor(idx / 2), 3, 5);
     const workoutMinutes = minutes > 0 ? minutes : Math.max(0, Math.round(sets * repMin));
-    const details = [`主課：總量 ${workoutMinutes}'（建議：${sets} × ${repMin}'，跑/休 4:1，休 ${restMin}'）`];
+    const distInfo = vdot ? getDistRangeStr(repMin, vdot, 0.86, 0.92) : "";
+    const details = [`主課：${sets} × ${repMin}分鐘${distInfo}（總量 ${workoutMinutes}分鐘，跑/休 4:1，休 ${restMin}分鐘）`];
     details.push("另加：熱身／放鬆");
     return {
       zone: 4,
@@ -1647,7 +2369,8 @@ function sessionPlanForDay(weekIndex, day, ctx) {
     const workTotal = minutes > 0 ? minutes : clamp(5 + idx * 2, 5, 15);
     const repMin = workTotal <= 6 ? 1 : workTotal <= 9 ? 2 : workTotal <= 12 ? 3 : 4;
     const reps = Math.max(1, Math.round(workTotal / repMin));
-    const details = [`主課：${reps} × ${repMin}'（跑/休 1:1）`, "總量：由 5' 逐週加到最多 15'", "另加：熱身／放鬆"];
+    const distInfo = vdot ? getDistRangeStr(repMin, vdot, 0.92, 0.99) : "";
+    const details = [`主課：${reps} × ${repMin}分鐘${distInfo}（跑/休 1:1）`, "總量：由 5分鐘 逐週加到最多 15分鐘", "另加：熱身／放鬆"];
     const workoutMinutes = workTotal;
     return {
       zone: 5,
@@ -1662,7 +2385,8 @@ function sessionPlanForDay(weekIndex, day, ctx) {
     const repSec = workTotal <= 8 ? 30 : 60;
     const repMin = repSec === 30 ? 0.5 : 1;
     const reps = Math.max(1, Math.round(workTotal / repMin));
-    const details = [`主課：${reps} × ${repSec}s（跑/休 1:1）`, "總量：由 5' 逐週加到最多 15'", "另加：熱身／放鬆"];
+    const distInfo = vdot ? getDistRangeStr(repMin, vdot, 0.99, 1.06) : "";
+    const details = [`主課：${reps} × ${repSec}秒${distInfo}（跑/休 1:1）`, "總量：由 5分鐘 逐週加到最多 15分鐘", "另加：熱身／放鬆"];
     const workoutMinutes = workTotal;
     return {
       zone: 6,
@@ -1851,7 +2575,55 @@ function rebalanceDayPlanMinutes(plans, targetMinutes, options, chunkSize) {
     }
   }
 
-  return plans.map((p, i) => ({ ...p, minutes: mins[i] }));
+  const minAerobic = Number.isFinite(WORKOUT_HELPER_CONFIG?.long?.durationMin) ? Number(WORKOUT_HELPER_CONFIG.long.durationMin) : 30;
+  if (Number.isFinite(minAerobic) && minAerobic > 0 && easyIdx.length) {
+    for (const i of easyIdx) {
+      if (!(mins[i] > 0 && mins[i] < minAerobic)) continue;
+      const need = minAerobic - mins[i];
+
+      let donor = -1;
+      let best = -1;
+      for (const j of easyIdx) {
+        if (j === i) continue;
+        if (mins[j] >= minAerobic + need && mins[j] > best) {
+          best = mins[j];
+          donor = j;
+        }
+      }
+
+      if (donor >= 0) {
+        mins[donor] -= need;
+        mins[i] += need;
+        continue;
+      }
+
+      const removed = mins[i];
+      mins[i] = 0;
+
+      let remaining = removed;
+      const easyReceivers = easyIdx.filter((j) => j !== i && mins[j] >= minAerobic).sort((a, b) => mins[b] - mins[a]);
+      for (const j of easyReceivers) {
+        if (remaining <= 0) break;
+        remaining -= addTo(j, remaining);
+      }
+      if (remaining > 0) {
+        for (const group of [longIdx, qualityIdx, raceIdx]) {
+          for (const j of group) {
+            if (remaining <= 0) break;
+            remaining -= addTo(j, remaining);
+          }
+        }
+      }
+    }
+  }
+
+  return plans.map((p, i) => {
+    const minutes = mins[i];
+    if (String(p?.type || "") === "Easy" && !(minutes > 0)) {
+      return { ...p, type: "Rest", minutes: 0, phase: "", race: null };
+    }
+    return { ...p, minutes };
+  });
 }
 
 function computeWeekDayPlans(weekIndex) {
@@ -1865,10 +2637,19 @@ function computeWeekDayPlans(weekIndex) {
   const block = normalizeBlockValue(w.block || "") || "Base";
   const phases = normalizePhases(w.phases);
   const races = raceEntriesForWeek(w);
-  const pr = String(w.priority || "").trim().toUpperCase();
-  const isRaceWeek = races.length > 0 && (pr === "A" || pr === "B");
+  const pr = normalizeRacePriorityValue(w.priority);
+  const isRaceWeek = races.length > 0 && pr === "A";
   const next = nextTargetRaceFromWeekIndex(idx);
-  const raceContext = isRaceWeek ? races[0] : next?.race || null;
+  
+  // Find the main race (longest distance) for context
+  let mainRace = null;
+  if (isRaceWeek) {
+    mainRace = races.reduce((prev, curr) => {
+      return (Number(curr.distanceKm) || 0) > (Number(prev.distanceKm) || 0) ? curr : prev;
+    }, races[0]);
+  }
+  
+  const raceContext = isRaceWeek ? mainRace : next?.race || null;
 
   const intensityOrder = intensityRelevanceForRace(raceContext?.distanceKm, raceContext?.kind);
   const intensityPhases = phases.filter((p) => p === "Tempo" || p === "Threshold" || p === "VO2Max" || p === "Anaerobic");
@@ -1876,52 +2657,61 @@ function computeWeekDayPlans(weekIndex) {
 
   const day = new Array(7).fill(null).map(() => ({ type: "Rest", minutes: 0, phase: "", race: null }));
 
-  const raceDay = isRaceWeek ? clamp(Number(races[0]?.dayIndex) || 0, 0, 6) : null;
-  if (Number.isFinite(raceDay)) {
-    day[raceDay] = { type: "Race", minutes: estimateRaceMinutes(races[0]?.distanceKm, races[0]?.kind), phase: "", race: races[0] };
+  if (isRaceWeek) {
+    // Place all races on their respective days
+    for (const r of races) {
+      const dIdx = clamp(Number(r.dayIndex) || 0, 0, 6);
+      day[dIdx] = { 
+        type: "Race", 
+        minutes: estimateRaceMinutes(r.distanceKm, r.kind), 
+        phase: "", 
+        race: r 
+      };
+    }
+  }
+
+  const strengthDay = 3;
+  if (day[strengthDay].type === "Rest") {
+    day[strengthDay] = { type: "Rest", minutes: 0, phase: "", race: null };
   }
 
   const hasLong = (block === "Base" || block === "Build" || (block === "Peak" && !isRaceWeek)) && !isRaceWeek;
-  const longDay = hasLong ? 5 : null;
+  const longDay = hasLong ? 6 : null;
 
-  const isPeak = block === "Peak";
+  const setIfRest = (d, next) => {
+    if (day[d]?.type === "Rest") day[d] = next;
+  };
+
   const isRecoveryBlock = block === "Deload" || block === "Transition";
-
   if (isRecoveryBlock) {
-    [1, 3, 5].forEach((d) => {
-      if (day[d].type === "Rest") day[d] = { type: "Easy", minutes: 0, phase: "", race: null };
+    [0, 1, 2, 4, 5, 6].forEach((d) => {
+      setIfRest(d, { type: "Easy", minutes: 0, phase: "", race: null });
     });
-  } else if (isPeak) {
+  } else if (block === "Peak") {
     const q1 = intensityPhases[0] || "VO2Max";
     const q2 = intensityPhases[1] || (q1 === "VO2Max" ? "Threshold" : "VO2Max");
-    const qDays = [1, 3].filter((d) => !Number.isFinite(raceDay) || d !== raceDay);
-    if (qDays[0] !== undefined) day[qDays[0]] = { type: "Quality", minutes: 0, phase: q1, race: null };
-    if (!isRaceWeek && qDays[1] !== undefined) day[qDays[1]] = { type: "Quality", minutes: 0, phase: q2, race: null };
-    if (Number.isFinite(longDay)) {
-      day[longDay] = { type: "Long", minutes: 0, phase: "", race: null };
-    }
+    setIfRest(1, { type: "Quality", minutes: 0, phase: q1, race: null });
+    if (!isRaceWeek) setIfRest(4, { type: "Quality", minutes: 0, phase: q2, race: null });
+    [0, 2, 5].forEach((d) => {
+      setIfRest(d, { type: "Easy", minutes: 0, phase: "", race: null });
+    });
+    if (Number.isFinite(longDay)) setIfRest(longDay, { type: "Long", minutes: 0, phase: "", race: null });
   } else if (block === "Build") {
     const q1 = intensityPhases[0] || "Tempo";
     const q2 = intensityPhases[1] || "Threshold";
-    day[1] = { type: "Quality", minutes: 0, phase: q1, race: null };
-    day[3] = { type: "Quality", minutes: 0, phase: q2, race: null };
-    if (Number.isFinite(longDay)) {
-      day[longDay] = { type: "Long", minutes: 0, phase: "", race: null };
-    }
-    [0, 2, 6].forEach((d) => {
-      if (day[d].type === "Rest") day[d] = { type: "Easy", minutes: 0, phase: "", race: null };
+    setIfRest(1, { type: "Quality", minutes: 0, phase: q1, race: null });
+    setIfRest(4, { type: "Quality", minutes: 0, phase: q2, race: null });
+    [0, 2, 5].forEach((d) => {
+      setIfRest(d, { type: "Easy", minutes: 0, phase: "", race: null });
     });
-    if (day[4].type === "Rest") day[4] = { type: "Rest", minutes: 0, phase: "", race: null };
+    if (Number.isFinite(longDay)) setIfRest(longDay, { type: "Long", minutes: 0, phase: "", race: null });
   } else {
-    const q = intensityPhases[0] || phases.find((p) => p !== "Aerobic Endurance" && p !== "Deload" && p !== "Peaking") || "Tempo";
-    day[1] = { type: "Quality", minutes: 0, phase: q, race: null };
-    if (Number.isFinite(longDay)) {
-      day[longDay] = { type: "Long", minutes: 0, phase: "", race: null };
-    }
-    [0, 2, 3, 4, 6].forEach((d) => {
-      if (day[d].type === "Rest") day[d] = { type: "Easy", minutes: 0, phase: "", race: null };
+    const q = intensityPhases[0] || phases.find((p) => p === "Tempo" || p === "Threshold" || p === "VO2Max" || p === "Anaerobic") || "Tempo";
+    setIfRest(1, { type: "Quality", minutes: 0, phase: q, race: null });
+    [0, 2, 4, 5].forEach((d) => {
+      setIfRest(d, { type: "Easy", minutes: 0, phase: "", race: null });
     });
-    day[4] = { type: "Rest", minutes: 0, phase: "", race: null };
+    if (Number.isFinite(longDay)) setIfRest(longDay, { type: "Long", minutes: 0, phase: "", race: null });
   }
 
   const plans = day.map((d) => ({ ...d }));
@@ -2007,6 +2797,7 @@ function computeWeekDayPlans(weekIndex) {
     }
   });
 
+  const raceDay = isRaceWeek && raceContext ? clamp(Number(raceContext.dayIndex) || 0, 0, 6) : null;
   const constrained = applyLoadConstraintsToPlans(idx, rebalanced, { block, isRaceWeek, raceDay, minuteOptions: options });
   return { block, targetMinutes, plans: constrained.plans, volumeHrsOverride: constrained.volumeHrsOverride };
 }
@@ -2035,10 +2826,21 @@ function applyAutoSessionsForWeek(weekIndex) {
     const s = sessions[dayIndex];
     if (!s) continue;
 
+    if (dayIndex === 3 && String(p?.type || "") !== "Race") {
+      s.kind = "Strength";
+      s.zone = 1;
+      s.rpe = 1;
+      s.workoutsCount = 1;
+      s.workouts = [{ duration: 0, rpe: 1 }];
+      s.note = "肌力訓練";
+      ensureSessionWorkouts(s);
+      continue;
+    }
+
     const plan = sessionPlanForDay(idx, p, { block: dayPlan.block });
     const plannedMinutes = Math.max(0, Math.round(Number(p?.minutes) || 0));
 
-    s.kind = "Run";
+    s.kind = String(p?.type || "") === "Race" ? "Race" : "Run";
     s.zone = clamp(Number(plan.zone) || 1, 1, 6);
     s.rpe = clamp(Number(plan.rpe) || 1, 1, 10);
     s.workoutsCount = 1;
@@ -2838,11 +3640,12 @@ function persistState() {
     const payload = {
       startDate: formatYMD(state.startDate),
       ytdVolumeHrs: Number.isFinite(state.ytdVolumeHrs) ? state.ytdVolumeHrs : null,
+      vdot: Number.isFinite(state.vdot) ? state.vdot : null,
       planStarted: state.planStarted === true,
       annualVolumeSettings: state.annualVolumeSettings,
       weeks: state.weeks.map((w) => ({
         races: Array.isArray(w.races) ? w.races : [],
-        priority: w.priority || "",
+        priority: normalizeRacePriorityValue(w.priority) || "",
         block: w.block || "",
         blockAuto: w.blockAuto === false ? false : true,
         season: w.season || "",
@@ -2879,6 +3682,7 @@ function applyPersistedTrainingState(persisted) {
     state.startDate = startOfMonday(persistedStartDate);
   }
   state.ytdVolumeHrs = Number.isFinite(persisted?.ytdVolumeHrs) ? persisted.ytdVolumeHrs : null;
+  state.vdot = Number.isFinite(persisted?.vdot) ? persisted.vdot : null;
   state.planBaseVolume = Number.isFinite(persisted?.planBaseVolume) ? persisted.planBaseVolume : null;
   state.planStarted = persisted?.planStarted === true;
   state.annualVolumeSettings =
@@ -2895,7 +3699,7 @@ function applyPersistedTrainingState(persisted) {
     persisted.weeks.forEach((p, idx) => {
       const w = state.weeks[idx];
       if (!w) return;
-      w.priority = typeof p.priority === "string" ? p.priority : "";
+      w.priority = normalizeRacePriorityValue(typeof p.priority === "string" ? p.priority : "");
       w.block = typeof p.block === "string" ? normalizeBlockValue(p.block) : w.block;
        w.blockAuto = p?.blockAuto === false ? false : true;
       w.season = typeof p.season === "string" ? p.season : "";
@@ -3471,7 +4275,7 @@ function snapshotForHistory() {
             kind: typeof r?.kind === "string" ? r.kind : "",
           }))
         : [],
-      priority: w.priority || "",
+      priority: normalizeRacePriorityValue(w.priority) || "",
       block: w.block || "",
       blockAuto: w.blockAuto === false ? false : true,
       season: w.season || "",
@@ -3520,7 +4324,7 @@ function applyHistorySnapshot(snapshot) {
           }))
           .filter((r) => r.name.trim() && r.date)
       : [];
-    w.priority = typeof p.priority === "string" ? p.priority : "";
+    w.priority = normalizeRacePriorityValue(typeof p.priority === "string" ? p.priority : "");
     w.block = typeof p.block === "string" ? p.block : "";
     w.blockAuto = p?.blockAuto === false ? false : true;
     w.season = typeof p.season === "string" ? p.season : "";
@@ -3614,7 +4418,7 @@ function generatePlan() {
 
   for (const w of state.weeks) {
     const base = 4.5 + rng() * 2.5;
-    const volume = w.priority === "A" ? base * 0.75 : base;
+    const volume = normalizeRacePriorityValue(w.priority) === "A" ? base * 0.75 : base;
     w.volumeHrs = `${volume.toFixed(1)}`;
     w.volumeMode = "direct";
     w.volumeFactor = 1;
@@ -3721,36 +4525,7 @@ function renderCalendar() {
         });
         cell.appendChild(btn);
       } else if (row.type === "date") {
-        if (i === 0) {
-          const wrap = el("div", "calInputWrap");
-          const input = document.createElement("input");
-          input.className = "calInput";
-          input.type = "date";
-          input.value = formatYMD(w.monday);
-          input.addEventListener("click", (e) => e.stopPropagation());
-          input.addEventListener("change", () => {
-            const nextRaw = input.value;
-            const nextDate = parseYMD(nextRaw);
-            if (!nextDate) {
-              input.value = formatYMD(state.startDate);
-              return;
-            }
-
-            const nextMonday = startOfMonday(nextDate);
-            if (nextMonday.getTime() === state.startDate.getTime()) return;
-
-            pushHistory();
-            recomputeMondaysFromStartDate(nextMonday);
-            persistState();
-            updateHeader();
-            renderCalendar();
-            renderWeekDetails();
-          });
-          wrap.appendChild(input);
-          cell.appendChild(wrap);
-        } else {
-          setCellText(cell, formatMD(w.monday));
-        }
+        setCellText(cell, formatMD(w.monday));
       } else if (row.type === "blockSelect") {
         const wrap = el("div", "calSelectWrap");
         wrap.classList.add("calSelectWrap--wide");
@@ -3799,7 +4574,7 @@ function renderCalendar() {
         wrap.appendChild(select);
         cell.appendChild(wrap);
       } else if (row.type === "prioritySelect") {
-        setCellText(cell, w.priority || "—");
+        setCellText(cell, racePriorityLabelZh(w.priority) || "—");
       } else if (row.type === "phase") {
         cell.classList.add("calCell--clickable", "phaseCell");
         const btn = el("button", "phaseBtn", "");
@@ -3826,8 +4601,11 @@ function renderCalendar() {
         const races = Array.isArray(w.races) ? w.races : [];
         races.slice(0, 2).forEach((r) => {
           const name = (r?.name || "").trim();
-          if (!name) return;
-          const item = el("div", "raceV", name);
+          const dist = Number(r?.distanceKm);
+          const distText = Number.isFinite(dist) && dist > 0 ? `${dist}km` : "";
+          const text = name ? (distText ? `${name}（${distText}）` : name) : distText;
+          if (!text) return;
+          const item = el("div", "raceV", text);
           cols.appendChild(item);
         });
         if (races.length > 2) {
@@ -4174,11 +4952,6 @@ function renderWeekDetails() {
     helperBtn.style.fontSize = "12px";
     helperBtn.textContent = "課表小助手";
     helperBtn.addEventListener("click", () => {
-      if (!authUser) {
-        const overlay = buildAuthModal("login");
-        document.body.appendChild(overlay);
-        return;
-      }
       openWorkoutHelperModal(s, () => {
         ensureSessionWorkouts(s);
         persistState();
@@ -4409,7 +5182,7 @@ function reassignAllRacesByDate() {
     races.forEach((r) => {
       const name = (r?.name || "").trim();
       const date = (r?.date || "").trim();
-      if (!name || !date) return;
+      if (!date) return;
       const dist = Number(r?.distanceKm);
       const distanceKm = Number.isFinite(dist) && dist > 0 ? dist : null;
       const kind = typeof r?.kind === "string" ? r.kind : "";
@@ -4427,12 +5200,17 @@ function reassignAllRacesByDate() {
     const w = state.weeks[idx];
     if (!w) return;
     if (!Array.isArray(w.races)) w.races = [];
-    const exists = w.races.some((x) => (x?.date || "") === r.date && (x?.name || "").trim() === r.name);
-    if (!exists) w.races.push({ name: r.name, date: r.date, distanceKm: r.distanceKm ?? null, kind: r.kind || "" });
+    const exists = w.races.some((x) => (x?.date || "") === r.date && (x?.name || "").trim() === (r.name || ""));
+    if (!exists) w.races.push({ name: r.name || "", date: r.date, distanceKm: r.distanceKm ?? null, kind: r.kind || "" });
   });
 
   state.weeks.forEach((w) => {
-    if (!Array.isArray(w.races) || w.races.length === 0) w.priority = "";
+    const hasRaces = Array.isArray(w.races) && w.races.length > 0;
+    if (!hasRaces) {
+      w.priority = "";
+      return;
+    }
+    w.priority = normalizeRacePriorityValue(w.priority) || "C";
   });
 
   applyCoachAutoRules();
@@ -4448,7 +5226,7 @@ function openRaceInputModal() {
   const modal = el("div", "modal");
   modal.classList.add("modal--scroll");
   const title = el("div", "modal__title", "輸入比賽");
-  const subtitle = el("div", "modal__subtitle", "輸入比賽名稱、日期、距離、項目及優先級；系統會按日期更新相應週的比賽／優先級");
+  const subtitle = el("div", "modal__subtitle", "輸入比賽日期、距離及優先級；系統會按日期更新相應週的比賽／優先級");
 
   const list = el("div", "raceList");
   const renderList = () => {
@@ -4457,18 +5235,16 @@ function openRaceInputModal() {
     state.weeks.forEach((w, weekIdx) => {
       const races = Array.isArray(w.races) ? w.races : [];
       races.forEach((r, raceIdx) => {
-        const name = (r?.name || "").trim();
         const date = (r?.date || "").trim();
-        if (!name || !date) return;
+        if (!date) return;
         const dist = Number(r?.distanceKm);
         const distText = Number.isFinite(dist) && dist > 0 ? `${dist}km` : "";
-        const kindRaw = String(r?.kind || "").trim();
-        const kindText = kindRaw === "trail" ? "越野跑" : kindRaw === "road" ? "路跑" : kindRaw;
-        rows.push({ weekIdx, weekNo: w.weekNo, raceIdx, name, date, distText, kindText });
+        const pr = normalizeRacePriorityValue(w.priority);
+        rows.push({ weekIdx, weekNo: w.weekNo, raceIdx, date, distText, pr });
       });
     });
 
-    rows.sort((a, b) => a.date.localeCompare(b.date) || a.weekIdx - b.weekIdx || a.name.localeCompare(b.name));
+    rows.sort((a, b) => a.date.localeCompare(b.date) || a.weekIdx - b.weekIdx);
 
     if (!rows.length) {
       list.appendChild(el("div", "muted", "未有比賽"));
@@ -4477,8 +5253,9 @@ function openRaceInputModal() {
 
     rows.forEach((r) => {
       const row = el("div", "raceRow");
-      const meta = [r.distText, r.kindText].filter(Boolean).join(" · ");
-      const parts = [weekLabelZh(r.weekNo), r.date, r.name];
+      const prLabel = racePriorityLabelZh(r.pr) || r.pr;
+      const meta = [r.distText, prLabel].filter(Boolean).join(" · ");
+      const parts = [weekLabelZh(r.weekNo), r.date];
       if (meta) parts.push(meta);
       row.appendChild(el("div", "raceRow__name", parts.join(" · ")));
       const del = el("button", "iconBtn", "×");
@@ -4507,37 +5284,29 @@ function openRaceInputModal() {
   };
 
   const form = el("form", "formRow");
-  const name = document.createElement("input");
-  name.className = "input";
-  name.type = "text";
-  name.placeholder = "比賽名稱";
-  name.required = true;
-
   const date = document.createElement("input");
   date.className = "input";
   date.type = "date";
   date.required = true;
+  {
+    const s = state.startDate instanceof Date ? state.startDate : null;
+    const minD = s ? addDays(s, 70) : new Date();
+    date.min = formatYMD(minD);
+  }
 
-  const distanceKm = document.createElement("input");
+  const distanceKm = document.createElement("select");
   distanceKm.className = "input";
-  distanceKm.type = "number";
-  distanceKm.placeholder = "距離（公里）";
-  distanceKm.min = "0";
-  distanceKm.step = "0.1";
-  distanceKm.required = true;
-
-  const kind = document.createElement("select");
-  kind.className = "input";
-  kind.required = true;
   [
-    { v: "", t: "項目" },
-    { v: "road", t: "路跑" },
-    { v: "trail", t: "越野跑" },
+    { v: "5", t: "5 公里" },
+    { v: "10", t: "10 公里" },
+    { v: "15", t: "15 公里" },
+    { v: "21.1", t: "半程馬拉松" },
+    { v: "42.195", t: "馬拉松" },
   ].forEach(({ v, t }) => {
     const opt = document.createElement("option");
     opt.value = v;
     opt.textContent = t;
-    kind.appendChild(opt);
+    distanceKm.appendChild(opt);
   });
 
   const priority = document.createElement("select");
@@ -4545,9 +5314,8 @@ function openRaceInputModal() {
   priority.required = true;
   [
     { v: "", t: "優先級" },
-    { v: "A", t: "A" },
-    { v: "B", t: "B" },
-    { v: "C", t: "C" },
+    { v: "A", t: "重要" },
+    { v: "C", t: "不重要" },
   ].forEach(({ v, t }) => {
     const opt = document.createElement("option");
     opt.value = v;
@@ -4558,27 +5326,32 @@ function openRaceInputModal() {
   const add = el("button", "btn btn--primary", "加入");
   add.type = "submit";
 
-  form.appendChild(name);
   form.appendChild(date);
   form.appendChild(distanceKm);
-  form.appendChild(kind);
   form.appendChild(priority);
   form.appendChild(add);
 
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    const raceName = name.value.trim();
     const raceDate = date.value;
     const raceDistanceKm = Number(String(distanceKm.value || "").trim());
-    const raceKind = kind.value;
-    const racePriority = priority.value;
-    if (!raceName || !raceDate || !racePriority) return;
+    const racePriority = normalizeRacePriorityValue(priority.value);
+    if (!raceDate || !racePriority) return;
     if (!Number.isFinite(raceDistanceKm) || raceDistanceKm <= 0) {
       showToast("請輸入有效距離（公里）", { variant: "warn", durationMs: 1800 });
       return;
     }
-    if (!raceKind) {
-      showToast("請選擇項目", { variant: "warn", durationMs: 1800 });
+    {
+      const idx0 = weekIndexForRaceYmd(raceDate);
+      if (idx0 !== null && idx0 < 10) {
+        showToast("比賽日期需距離開始日期至少 10 週", { variant: "warn", durationMs: 1800 });
+        return;
+      }
+    }
+    const aCount = state.weeks.filter((w) => normalizeRacePriorityValue(w?.priority) === "A").length;
+    const nextPr = racePriority;
+    if (nextPr === "A" && aCount >= 2) {
+      showToast("重要最多只可選取兩場", { variant: "warn" });
       return;
     }
     const idx = weekIndexForRaceYmd(raceDate);
@@ -4589,20 +5362,17 @@ function openRaceInputModal() {
     pushHistory();
     const w = state.weeks[idx];
     if (!Array.isArray(w.races)) w.races = [];
-    const existingIndex = w.races.findIndex((r) => (r?.date || "") === raceDate && (r?.name || "").trim() === raceName);
+    const existingIndex = w.races.findIndex((r) => (r?.date || "") === raceDate);
     if (existingIndex >= 0) {
       const ex = w.races[existingIndex];
       if (ex && typeof ex === "object") {
         ex.distanceKm = raceDistanceKm;
-        ex.kind = raceKind;
       }
     } else {
-      w.races.push({ name: raceName, date: raceDate, distanceKm: raceDistanceKm, kind: raceKind });
+      w.races.push({ name: "", date: raceDate, distanceKm: raceDistanceKm, kind: "" });
     }
-    name.value = "";
     date.value = "";
-    distanceKm.value = "";
-    kind.value = "";
+    distanceKm.selectedIndex = 0;
     priority.value = "";
     w.priority = racePriority;
     // Force auto volume factor when race/priority is updated
@@ -4632,7 +5402,7 @@ function openRaceInputModal() {
   document.body.appendChild(overlay);
 
   renderList();
-  window.setTimeout(() => name.focus(), 0);
+  window.setTimeout(() => date.focus(), 0);
 }
 
 function selectWeek(index) {
@@ -4670,7 +5440,7 @@ function openDesignWizard() {
     startDate: "",
     annualVolume: "",
     races: [], // Array of race objects
-    currentRace: { name: "", date: "", distance: "", kind: "", priority: "A" },
+    currentRace: { date: "", distance: "", priority: "A" },
     vdot: null
   };
 
@@ -4760,15 +5530,26 @@ function openDesignWizard() {
        desc.style.color = "var(--text-muted)";
        desc.style.marginBottom = "8px";
 
-       const input = document.createElement("input");
-       input.type = "number";
+       const input = document.createElement("select");
        input.className = "input";
-       input.placeholder = "例如 360";
-       input.oninput = () => {
-         input.style.borderColor = "";
-       };
-       if (wizardState.annualVolume) input.value = wizardState.annualVolume;
-       else if (state.ytdVolumeHrs) input.value = state.ytdVolumeHrs;
+       [
+         { label: "150 小時（初階）", value: 150 },
+         { label: "200 小時（初中階）", value: 200 },
+         { label: "250 小時（中階）", value: 250 },
+         { label: "300 小時（中高階）", value: 300 },
+         { label: "350 小時（高階）", value: 350 },
+       ].forEach((o) => {
+         const opt = document.createElement("option");
+         opt.value = String(o.value);
+         opt.textContent = o.label;
+         input.appendChild(opt);
+       });
+       if (Number(state.ytdVolumeHrs)) {
+         input.value = String(state.ytdVolumeHrs);
+       }
+       if (Number(wizardState.annualVolume)) {
+         input.value = String(wizardState.annualVolume);
+       }
 
        content.appendChild(label);
        content.appendChild(desc);
@@ -4780,11 +5561,9 @@ function openDesignWizard() {
        };
        nextBtn.onclick = () => {
          if (!input.value) {
-           input.style.borderColor = "var(--warn)";
-           input.focus();
-           return showToast("請輸入年總訓練量", { variant: "warn" });
+           return showToast("請選擇年總訓練量", { variant: "warn" });
          }
-         wizardState.annualVolume = input.value;
+         wizardState.annualVolume = Number(input.value);
          wizardState.step++;
          renderStep();
        };
@@ -4930,7 +5709,7 @@ function openDesignWizard() {
           row.style.marginBottom = "4px";
           row.style.fontSize = "14px";
           
-          row.textContent = `${r.date} ${r.name} (${r.distance || 0}km) [${r.priority}]`;
+          row.textContent = `${r.date} (${Number(r.distance || 0)}km) [${racePriorityLabelZh(r.priority) || r.priority}]`;
           
           const del = el("button", "btn btn--small btn--reset", "✕");
           del.style.color = "var(--warn)";
@@ -4950,54 +5729,47 @@ function openDesignWizard() {
       formTitle.style.marginBottom = "4px";
       content.appendChild(formTitle);
  
-      const todayYmdForRace = formatYMD(new Date());
+      const baseStart =
+        wizardState.startDate
+          ? parseYMD(wizardState.startDate)
+          : (state.startDate instanceof Date ? state.startDate : null);
+      const minRaceDate = baseStart ? addDays(baseStart, 70) : new Date();
+      const minRaceYmd = formatYMD(minRaceDate);
       const form = el("div");
       form.style.display = "flex";
       form.style.flexDirection = "column";
       form.style.gap = "8px";
  
-      const nameInput = document.createElement("input");
-      nameInput.className = "input";
-      nameInput.placeholder = "比賽名稱 (例如: 香港馬拉松)";
-      nameInput.value = wizardState.currentRace.name;
- 
       const dateInput = document.createElement("input");
       dateInput.className = "input";
       dateInput.type = "date";
-      dateInput.min = todayYmdForRace;
-      dateInput.value = wizardState.currentRace.date && String(wizardState.currentRace.date) < todayYmdForRace
-        ? todayYmdForRace
+      dateInput.min = minRaceYmd;
+      dateInput.value = wizardState.currentRace.date && String(wizardState.currentRace.date) < minRaceYmd
+        ? minRaceYmd
         : wizardState.currentRace.date;
  
-      const distInput = document.createElement("input");
+      const distInput = document.createElement("select");
       distInput.className = "input";
-      distInput.type = "number";
-      distInput.placeholder = "距離（公里）";
-      distInput.min = "0";
-      distInput.step = "0.1";
-      distInput.value = wizardState.currentRace.distance;
- 
-      const kindSelect = document.createElement("select");
-      kindSelect.className = "input";
       [
-        { v: "", t: "項目" },
-        { v: "road", t: "路跑" },
-        { v: "trail", t: "越野跑" },
-      ].forEach(({ v, t }) => {
+        { value: 5, label: "5 公里" },
+        { value: 10, label: "10 公里" },
+        { value: 21.1, label: "半程馬拉松" },
+      ].forEach(({ value, label }) => {
         const opt = document.createElement("option");
-        opt.value = v;
-        opt.textContent = t;
-        if (v === wizardState.currentRace.kind) opt.selected = true;
-        kindSelect.appendChild(opt);
+        opt.value = String(value);
+        opt.textContent = label;
+        distInput.appendChild(opt);
       });
+      if (Number(wizardState.currentRace.distance)) {
+        distInput.value = String(Number(wizardState.currentRace.distance));
+      }
  
       const prioritySelect = document.createElement("select");
       prioritySelect.className = "input";
       [
         { v: "", t: "優先級" },
-        { v: "A", t: "A" },
-        { v: "B", t: "B" },
-        { v: "C", t: "C" },
+        { v: "A", t: "重要" },
+        { v: "C", t: "不重要" },
       ].forEach(({ v, t }) => {
         const opt = document.createElement("option");
         opt.value = v;
@@ -5007,22 +5779,16 @@ function openDesignWizard() {
       });
  
       const updateState = () => {
-        wizardState.currentRace.name = nameInput.value;
         wizardState.currentRace.date = dateInput.value;
-        wizardState.currentRace.distance = distInput.value;
-        wizardState.currentRace.kind = kindSelect.value;
+        wizardState.currentRace.distance = Number(distInput.value);
         wizardState.currentRace.priority = prioritySelect.value;
       };
-      nameInput.oninput = updateState;
       dateInput.oninput = updateState;
-      distInput.oninput = updateState;
-      kindSelect.onchange = updateState;
+      distInput.onchange = updateState;
       prioritySelect.onchange = updateState;
  
-      form.appendChild(nameInput);
       form.appendChild(dateInput);
       form.appendChild(distInput);
-      form.appendChild(kindSelect);
       form.appendChild(prioritySelect);
       content.appendChild(form);
  
@@ -5030,14 +5796,19 @@ function openDesignWizard() {
       addBtn.style.marginTop = "8px";
       addBtn.style.width = "100%";
       addBtn.onclick = () => {
-        if (!nameInput.value) return showToast("請輸入比賽名稱", { variant: "warn" });
         if (!dateInput.value) return showToast("請選擇比賽日期", { variant: "warn" });
-        if (String(dateInput.value) < todayYmdForRace) return showToast("請選擇今天或以後的日期", { variant: "warn" });
-        if (!kindSelect.value) return showToast("請選擇項目", { variant: "warn" });
+        if (String(dateInput.value) < minRaceYmd) return showToast("比賽日期需距離開始日期至少 10 週", { variant: "warn" });
         if (!prioritySelect.value) return showToast("請選擇優先級", { variant: "warn" });
+        const nextPr = normalizeRacePriorityValue(prioritySelect.value);
+        const aCount = wizardState.races.filter((r) => normalizeRacePriorityValue(r.priority) === "A").length;
+        if (nextPr === "A" && aCount >= 2) return showToast("重要最多只可選取兩場", { variant: "warn" });
  
-        wizardState.races.push({ ...wizardState.currentRace });
-        wizardState.currentRace = { name: "", date: "", distance: "", kind: "", priority: "A" };
+        wizardState.races.push({ 
+           ...wizardState.currentRace, 
+           name: "比賽", // Add default name
+           priority: nextPr 
+        });
+        wizardState.currentRace = { date: "", distance: "", priority: "A" };
         renderStep();
       };
       content.appendChild(addBtn);
@@ -5048,18 +5819,29 @@ function openDesignWizard() {
       };
       const finishBtn = el("button", "btn btn--primary", "完成及建立");
       finishBtn.onclick = () => {
-        const hasPending = nameInput.value || dateInput.value;
-        if (hasPending) {
-          if (!nameInput.value || !dateInput.value || !kindSelect.value || !prioritySelect.value) {
-            return showToast("請先加入比賽或清空輸入欄", { variant: "warn" });
+        try {
+          const hasPending = !!dateInput.value;
+          if (hasPending) {
+            if (!dateInput.value || !prioritySelect.value) {
+              return showToast("請先加入比賽或清空輸入欄", { variant: "warn" });
+            }
+            if (String(dateInput.value) < minRaceYmd) {
+              return showToast("比賽日期需距離開始日期至少 10 週", { variant: "warn" });
+            }
+            const aCount = wizardState.races.filter((r) => normalizeRacePriorityValue(r.priority) === "A").length;
+            const nextPr = normalizeRacePriorityValue(prioritySelect.value);
+            if (nextPr === "A" && aCount >= 2) return showToast("重要最多只可選取兩場", { variant: "warn" });
+            wizardState.races.push({ ...wizardState.currentRace, priority: nextPr });
           }
-          if (String(dateInput.value) < todayYmdForRace) {
-            return showToast("請選擇今天或以後的日期", { variant: "warn" });
-          }
-          wizardState.races.push({ ...wizardState.currentRace });
+          const aCountAll = wizardState.races.filter((r) => normalizeRacePriorityValue(r.priority) === "A").length;
+          if (aCountAll > 2) return showToast("重要最多只可選取兩場", { variant: "warn" });
+          
+          applyWizard(wizardState);
+          overlay.remove();
+        } catch (e) {
+          console.error(e);
+          showToast(`建立計劃時發生錯誤: ${e.message}`, { variant: "warn", durationMs: 3000 });
         }
-        applyWizard(wizardState);
-        overlay.remove();
       };
  
       actions.appendChild(prevBtn);
@@ -5102,18 +5884,20 @@ function applyWizard(data) {
 
   if (Array.isArray(data.races)) {
     data.races.forEach(r => {
-      if (!r.name || !r.date) return;
+      if (!r.date) return;
 
       const raceDate = r.date;
-      const raceName = r.name;
+      const raceName = typeof r.name === "string" ? r.name : "";
       const raceDist = Number(r.distance);
       const raceKind = r.kind || "road";
-      const racePriority = r.priority || "A";
+      const racePriority = normalizeRacePriorityValue(r.priority || "A");
       
       const d = parseYMD(raceDate);
       if (d && state.startDate) {
-         const diff = d.getTime() - state.startDate.getTime();
-         const days = Math.floor((diff + MS_PER_DAY/2) / MS_PER_DAY);
+         // Align to Monday start
+         const startOfStart = startOfMonday(state.startDate);
+         const diff = d.getTime() - startOfStart.getTime();
+         const days = Math.round(diff / MS_PER_DAY);
          const weekIdx = Math.floor(days / 7);
          
          if (weekIdx >= 0 && weekIdx < 52) {
@@ -5134,6 +5918,9 @@ function applyWizard(data) {
     });
   }
 
+  if (data.vdot && Number.isFinite(data.vdot)) {
+    state.vdot = data.vdot;
+  }
   // 不記錄設計精靈推測的 VDOT 至訓練調控狀態
 
   reassignAllRacesByDate();
@@ -5141,11 +5928,20 @@ function applyWizard(data) {
    refreshAutoVolumeFactors();
    
    // Apply optimization if volume is set
-   if (state.ytdVolumeHrs) {
+  if (state.ytdVolumeHrs) {
       optimizePlanBaseVolume(state.ytdVolumeHrs);
    } else {
       recomputeFormulaVolumes();
    }
+
+  state.selectedWeekIndex = 0;
+  // Auto-generate sessions for all 52 weeks
+  for (let i = 0; i < 52; i++) {
+    const w = state.weeks[i];
+    if (w && Number(w.volumeHrs) > 0) {
+      applyAutoSessionsForWeek(i);
+    }
+  }
    
    state.planStarted = true;
    persistState();
@@ -5159,16 +5955,12 @@ function applyWizard(data) {
 
 function syncPlanStartedUi() {
   const startBtn = document.getElementById("startWizardBtn");
-  const annualVolumeWrap = document.querySelector(".annualVolumeField");
-  const annualVolumeInput = document.getElementById("annualVolumeInput");
   const annualVolumeApplyBtn = document.getElementById("annualVolumeApplyBtn");
   const annualVolumeClearBtn = document.getElementById("annualVolumeClearBtn");
   const autoFillAllBtn = document.getElementById("autoFillAllBtn");
   const raceInputBtn = document.getElementById("raceInputBtn");
   const exportPdfBtn = document.getElementById("exportPdfBtn");
   const controls = [
-    annualVolumeWrap,
-    annualVolumeInput,
     annualVolumeApplyBtn,
     annualVolumeClearBtn,
     autoFillAllBtn,
@@ -5277,6 +6069,7 @@ function wireButtons() {
       showToast(changed ? `已自動填充 ${changed} 週課表` : "未有可填充的週（請先設定訓練量）", { durationMs: 2200 });
     });
   }
+
 
   const resetWeekBtn = document.getElementById("resetWeekBtn");
   if (resetWeekBtn) {

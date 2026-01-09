@@ -438,7 +438,7 @@ export async function onRequestPost(ctx) {
   const baseInstructions = [
     "你係一個跑步訓練教練助手。",
     "你會收到用家訓練表狀態（JSON），包括 52 週資料同全季賽事清單。",
-    "你要按比賽重要程度(A/B/C)以及日期，幫用家為每週設定 block/phases/volumeHrs，同埋為每週 7 日預填 durationMinutes/rpe/zone。",
+    "你要按比賽重要程度(A/C)以及日期，幫用家為每週設定 block/phases/volumeHrs，同埋為每週 7 日預填 durationMinutes/rpe/zone。",
     "",
     "限制：",
     `- block 只可為：${blockOptions.join(", ")}`,
