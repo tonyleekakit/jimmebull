@@ -1802,7 +1802,10 @@ function minuteCapsForPlan(plan, options) {
   if (t === "Long") return { min: minLong, max: maxLong };
   if (t === "Easy") return { min: minEasy, max: maxEasy };
   if (t === "Quality") return { min: minQuality, max: maxQuality };
-  if (t === "Race") return { min: 30, max: 240 };
+  if (t === "Race") {
+    const m = Math.max(0, Math.round(Number(plan?.minutes) || 0));
+    return { min: m, max: m };
+  }
   return { min: 0, max: 0 };
 }
 
@@ -2005,7 +2008,8 @@ function applyLoadConstraintsToPlans(weekIndex, plans, ctx) {
 
     const matchRaceWeekTotalLoad = (maxIter) => {
       if (!chronicDaily) return;
-      const desiredTotalLoad = chronicDaily * 7;
+      // Race week should be a taper, so target ~70% of chronic load
+      const desiredTotalLoad = chronicDaily * 7 * 0.7;
       for (let guard = 0; guard < maxIter; guard++) {
         const m = compute();
         const totalLoad = m.dailyLoads.reduce((a, b) => a + b, 0);
@@ -2626,6 +2630,75 @@ function rebalanceDayPlanMinutes(plans, targetMinutes, options, chunkSize) {
   });
 }
 
+function computeLongRunMinutesForCycle(weekIndex, targetRaceDistKm) {
+  // Find current cycle index
+  // A cycle is typically 3 Base + 1 Deload (4 weeks)
+  // If the start is short (e.g. 1-2 base), it counts as cycle 1
+  
+  let cycleIndex = 1;
+  let currentCycleWeeks = 0;
+  
+  // Iterate from start to current week to determine cycle number
+  for (let i = 0; i <= weekIndex; i++) {
+    const w = state.weeks[i];
+    if (!w) continue;
+    
+    // Check if this week starts a new cycle (simple heuristic: if previous was deload and current is base)
+    // Or just count weeks if we assume standard structure.
+    // However, user said "3 base + 1 deload" is a cycle.
+    // But also "if start has only 1-2 base, it counts as a cycle".
+    
+    // Let's count "Deload" weeks encountered. Each deload completes a cycle?
+    // Or better: Cycle 1 starts at week 0.
+    // If we encounter a transition from Deload -> Base, increment cycle index.
+    
+    if (i > 0) {
+      const prev = state.weeks[i-1];
+      const prevBlock = normalizeBlockValue(prev?.block || "");
+      const currBlock = normalizeBlockValue(w.block || "");
+      
+      if ((prevBlock === "Deload" || prevBlock === "Transition") && currBlock === "Base") {
+        cycleIndex++;
+      }
+    }
+  }
+  
+  // Logic based on race distance
+  const dist = Number(targetRaceDistKm);
+  
+  if (dist <= 5) { // 5km logic
+    let m = 75;
+    if (cycleIndex === 1) m = 60;
+    else if (cycleIndex === 2) m = 65;
+    else if (cycleIndex === 3) m = 70;
+    return Math.min(m, 75);
+  } else if (dist <= 10) { // 10km logic
+    let m = 90;
+    if (cycleIndex === 1) m = 60;
+    else if (cycleIndex === 2) m = 65;
+    else if (cycleIndex === 3) m = 70;
+    else if (cycleIndex === 4) m = 75;
+    else if (cycleIndex === 5) m = 80;
+    else if (cycleIndex === 6) m = 85;
+    return Math.min(m, 90);
+  } else { // Half Marathon logic
+    let m = 120;
+    if (cycleIndex === 1) m = 60;
+    else if (cycleIndex === 2) m = 65;
+    else if (cycleIndex === 3) m = 70;
+    else if (cycleIndex === 4) m = 75;
+    else if (cycleIndex === 5) m = 80;
+    else if (cycleIndex === 6) m = 85;
+    else if (cycleIndex === 7) m = 90;
+    else if (cycleIndex === 8) m = 95;
+    else if (cycleIndex === 9) m = 100;
+    else if (cycleIndex === 10) m = 105;
+    else if (cycleIndex === 11) m = 110;
+    else if (cycleIndex === 12) m = 115;
+    return Math.min(m, 120);
+  }
+}
+
 function computeWeekDayPlans(weekIndex) {
   const idx = clamp(Number(weekIndex) || 0, 0, 51);
   const w = state.weeks[idx];
@@ -2684,7 +2757,7 @@ function computeWeekDayPlans(weekIndex) {
 
   const isRecoveryBlock = block === "Deload" || block === "Transition";
   if (isRecoveryBlock) {
-    [0, 1, 2, 4, 5, 6].forEach((d) => {
+    [0, 2, 4, 6].forEach((d) => {
       setIfRest(d, { type: "Easy", minutes: 0, phase: "", race: null });
     });
   } else if (block === "Peak") {
@@ -2715,7 +2788,7 @@ function computeWeekDayPlans(weekIndex) {
   }
 
   const plans = day.map((d) => ({ ...d }));
-  const options =
+  let options =
     block === "Peak"
       ? { minEasy: 0, maxEasy: 90, minLong: 30, maxLong: 120, minQuality: 5, maxQuality: 110 }
       : block === "Deload" || block === "Transition"
@@ -2727,22 +2800,84 @@ function computeWeekDayPlans(weekIndex) {
   const buildIdx = blockStreakIndex(idx, "Build");
 
   if (block === "Base" && !isRaceWeek) {
-    const l = clamp(60 + baseIdx * 10, 60, 180);
+    const race = nextTargetRaceFromWeekIndex(idx)?.race;
+    const dist = race ? Number(race.distanceKm) : 21.1; // Default to HM logic if no race
+    const l = computeLongRunMinutesForCycle(idx, dist);
+    
+    // Enforce constraints: Easy runs <= Long run, Long run <= 120
+    options.maxEasy = l;
+    options.maxLong = l;
+
+    for (let i = 0; i < basePlans.length; i++) {
+       if (String(basePlans[i]?.type || "") === "Quality") basePlans[i].minutes = qualityWorkoutMinutesForPhase(idx, basePlans[i]?.phase);
+       if (String(basePlans[i]?.type || "") === "Long") basePlans[i].minutes = l;
+     }
+
+     const maxEasy = l;
+     for (let i = 0; i < basePlans.length; i++) {
+       if (String(basePlans[i]?.type || "") === "Easy") {
+         basePlans[i].minutes = Math.min(basePlans[i].minutes, maxEasy);
+       }
+     }
+  } else if (block === "Build" && !isRaceWeek) {
+    const race = nextTargetRaceFromWeekIndex(idx)?.race;
+    const dist = race ? Number(race.distanceKm) : 21.1;
+    let l = 120; // Default max for HM
+    if (dist <= 5) l = 75;
+    else if (dist <= 10) l = 90;
+    
+    // Enforce constraints: Easy runs <= Long run, Long run <= 120
+    options.maxEasy = l;
+    options.maxLong = l;
+
     for (let i = 0; i < basePlans.length; i++) {
       if (String(basePlans[i]?.type || "") === "Quality") basePlans[i].minutes = qualityWorkoutMinutesForPhase(idx, basePlans[i]?.phase);
       if (String(basePlans[i]?.type || "") === "Long") basePlans[i].minutes = l;
     }
-  } else if (block === "Build" && !isRaceWeek) {
-    const l = clamp(75 + buildIdx * 10, 70, 180);
+    
+    const maxEasy = l;
     for (let i = 0; i < basePlans.length; i++) {
-      if (String(basePlans[i]?.type || "") === "Quality") basePlans[i].minutes = qualityWorkoutMinutesForPhase(idx, basePlans[i]?.phase);
-      if (String(basePlans[i]?.type || "") === "Long") basePlans[i].minutes = l;
+      if (String(basePlans[i]?.type || "") === "Easy") {
+        basePlans[i].minutes = Math.min(basePlans[i].minutes, maxEasy);
+      }
     }
   } else if (block === "Peak") {
     const l = clamp(70, 45, 120);
+
+    // Enforce constraints
+    options.maxEasy = l;
+    options.maxLong = l;
+
     for (let i = 0; i < basePlans.length; i++) {
       if (String(basePlans[i]?.type || "") === "Quality") basePlans[i].minutes = qualityWorkoutMinutesForPhase(idx, basePlans[i]?.phase);
       if (!isRaceWeek && String(basePlans[i]?.type || "") === "Long") basePlans[i].minutes = l;
+    }
+
+    const maxEasy = l;
+    for (let i = 0; i < basePlans.length; i++) {
+      if (String(basePlans[i]?.type || "") === "Easy") {
+        basePlans[i].minutes = Math.min(basePlans[i].minutes, maxEasy);
+      }
+    }
+  }
+
+  if (isRaceWeek) {
+    options.maxEasy = 45;
+    
+    // 1. Force day before race to Rest (unless it's a race itself)
+    for (const r of races) {
+      const dIdx = clamp(Number(r.dayIndex) || 0, 0, 6);
+      const prev = dIdx - 1;
+      if (prev >= 0 && String(basePlans[prev]?.type || "") !== "Race") {
+        basePlans[prev] = { type: "Rest", minutes: 0, phase: "", race: null };
+      }
+    }
+
+    // 2. Clamp Easy runs to 45 mins
+    for (let i = 0; i < basePlans.length; i++) {
+      if (String(basePlans[i]?.type || "") === "Easy") {
+        basePlans[i].minutes = Math.min(basePlans[i].minutes, 45);
+      }
     }
   }
 
@@ -3522,7 +3657,7 @@ let cloudSaveInFlight = false;
 let calendarBaseVars = null;
 
 function canPersistTrainingState() {
-  return Boolean(authUser);
+  return true;
 }
 
 function clearPersistedTrainingState() {
@@ -4185,7 +4320,7 @@ async function wireAuth() {
       cloudSaveTimer = null;
       cloudSavePendingJson = "";
       cloudSaveInFlight = false;
-      clearPersistedTrainingState();
+      
       lastSyncedUserId = "";
       syncAuthUi();
       showToast("已登出");
@@ -4220,7 +4355,7 @@ async function wireAuth() {
         cloudSaveTimer = null;
         cloudSavePendingJson = "";
         cloudSaveInFlight = false;
-        clearPersistedTrainingState();
+        
         lastSyncedUserId = "";
         return;
       }
@@ -4527,75 +4662,19 @@ function renderCalendar() {
       } else if (row.type === "date") {
         setCellText(cell, formatMD(w.monday));
       } else if (row.type === "blockSelect") {
-        const wrap = el("div", "calSelectWrap");
-        wrap.classList.add("calSelectWrap--wide");
-        const select = document.createElement("select");
-        select.className = "calSelect calSelect--wide";
-        seasonOptions.forEach((v) => {
-          const opt = document.createElement("option");
-          opt.value = v;
-          opt.textContent = BLOCK_LABELS_ZH[v] || v || "—";
-          if (normalizeBlockValue(w.block || "") === v) opt.selected = true;
-          select.appendChild(opt);
-        });
-        select.addEventListener("click", (e) => e.stopPropagation());
-        select.addEventListener("change", () => {
-          pushHistory();
-          const val = select.value;
-          w.block = val;
-          w.blockAuto = false;
-          
-          // Force auto mode
-          w.volumeFactorAuto = true;
-          
-          // Manually set factor based on block to ensure immediate update
-          let nextFactor = 1.0;
-          if (val === "Base") nextFactor = 1.2;
-          else if (val === "Build") nextFactor = 1.1;
-          else if (val === "Deload") nextFactor = 0.6;
-          else if (val === "Transition") nextFactor = 0.5;
-          else {
-             // For Peak or others, rely on default logic which checks races
-             nextFactor = defaultVolumeFactorForWeekIndex(i);
-          }
-          w.volumeFactor = nextFactor;
-          
-          applyCoachPhaseRules();
-          refreshAutoVolumeFactors();
-          // Explicitly recompute because we manually changed the factor
-          recomputeFormulaVolumes();
-          
-          persistState();
-          updateHeader();
-          renderCalendar();
-          renderCharts();
-          renderWeekDetails();
-        });
-        wrap.appendChild(select);
-        cell.appendChild(wrap);
+        const val = normalizeBlockValue(w.block || "");
+        setCellText(cell, BLOCK_LABELS_ZH[val] || val || "—");
       } else if (row.type === "prioritySelect") {
         setCellText(cell, racePriorityLabelZh(w.priority) || "—");
       } else if (row.type === "phase") {
-        cell.classList.add("calCell--clickable", "phaseCell");
-        const btn = el("button", "phaseBtn", "");
-        btn.type = "button";
+        cell.classList.add("phaseCell");
         const phases = normalizePhases(w.phases);
         const selected = phases.includes(row.phase);
         if (selected) {
           cell.classList.add("is-on");
           cell.style.setProperty("--phaseBg", phaseColors[row.phase] || "var(--accent)");
         }
-        btn.setAttribute("aria-label", phaseLabelZh(row.phase));
-        btn.addEventListener("click", () => {
-          pushHistory();
-          w.phases = selected ? phases.filter((p) => p !== row.phase) : [...phases, row.phase];
-          w.phasesAuto = false;
-          persistState();
-          renderCalendar();
-          renderCharts();
-          renderWeekDetails();
-        });
-        cell.appendChild(btn);
+        // Read-only: no button, no interaction
       } else if (row.type === "races") {
         const cols = el("div", "raceCols");
         const races = Array.isArray(w.races) ? w.races : [];
@@ -4624,77 +4703,12 @@ function renderCalendar() {
           setCellText(cell, "—");
         }
       } else if (row.type === "acwrInput") {
-        const wrap = el("div", "calInputWrap");
-        const input = document.createElement("input");
-        input.className = "calInput";
-        input.type = "number";
-        input.step = "0.1";
-        input.min = "0";
         const f = Number(w.volumeFactor);
-        input.value = Number.isFinite(f) ? f.toFixed(1) : "1.0";
-        if (Number.isFinite(f) && f > 1.5) input.style.color = "#ef4444";
-        input.addEventListener("change", () => {
-          const raw = input.value;
-          const next = parseFloat(raw);
-          if (!Number.isFinite(next) || next < 0) {
-            const old = Number(w.volumeFactor);
-            input.value = Number.isFinite(old) ? old.toFixed(1) : "1.0";
-            return;
-          }
-          lockScrollPosition(() => {
-            pushHistory();
-            w.volumeFactor = next;
-            w.volumeMode = "formula";
-            // User manually changed factor, so disable auto update for this week
-            w.volumeFactorAuto = false;
-            recomputeFormulaVolumes();
-            persistState();
-            updateHeader();
-            renderCalendar();
-            renderCharts();
-            renderWeekDetails();
-          });
-        });
-        wrap.appendChild(input);
-        cell.appendChild(wrap);
+        const val = Number.isFinite(f) ? f.toFixed(1) : "1.0";
+        setCellText(cell, val);
+        if (Number.isFinite(f) && f > 1.5) cell.classList.add("calCell--acwrAlert");
       } else if (row.type === "text" && row.key === "volumeHrs") {
-        const wrap = el("div", "calInputWrap");
-        const input = document.createElement("input");
-        input.className = "calInput";
-        input.type = "number";
-        input.step = "0.1";
-        input.min = "0";
-        input.value = w.volumeHrs ? String(w.volumeHrs) : "";
-        input.addEventListener("change", () => {
-          const raw = input.value.trim();
-          const nextVal = parseFloat(raw);
-          
-          lockScrollPosition(() => {
-            pushHistory();
-            
-            // Reverse calculate factor: NewVolume = Base * Factor  =>  Factor = NewVolume / Base
-            // We need the base from the previous 4 weeks
-            const pastVolumes = state.weeks.map(wk => Number(wk.volumeHrs) || 0);
-            let base = computePastMean(pastVolumes, i, 4);
-            
-            // If base is 0, treat as 1 (consistent with recomputeFormulaVolumes logic)
-            if (base <= 0) base = 1;
-            
-            if (Number.isFinite(nextVal) && nextVal >= 0) {
-               w.volumeFactor = nextVal / base;
-               w.volumeFactorAuto = false;
-            }
-            
-            recomputeFormulaVolumes();
-            persistState();
-            updateHeader();
-            renderCalendar();
-            renderCharts();
-            renderWeekDetails();
-          });
-        });
-        wrap.appendChild(input);
-        cell.appendChild(wrap);
+        setCellText(cell, w.volumeHrs ? String(w.volumeHrs) : "");
       } else {
         setCellText(cell, w[row.key] || "");
       }
@@ -4827,30 +4841,8 @@ function renderWeekDetails() {
   meta.textContent = `${volumeLabel} · ${srpeLabel}`;
   weekDays.replaceChildren();
 
-  if (weekDays && weekDays.dataset.dndWired !== "1") {
-    weekDays.dataset.dndWired = "1";
-    weekDays.addEventListener("dragover", (e) => {
-      e.preventDefault();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-    });
-    weekDays.addEventListener("drop", (e) => {
-      e.preventDefault();
-      const raw = e.dataTransfer ? e.dataTransfer.getData("text/plain") : "";
-      const from = Number(raw);
-      if (!Number.isFinite(from)) return;
-
-      const target = e.target && e.target.closest ? e.target.closest(".dayCard") : null;
-      if (target) return;
-      const w2 = state.weeks[state.selectedWeekIndex];
-      const len = w2 ? getWeekSessions(w2).length : 7;
-      reorderDaySession(state.selectedWeekIndex, from, len);
-      stopDayDragAutoScroll();
-    });
-    weekDays.addEventListener("dragend", () => {
-      weekDays.classList.remove("is-dragging");
-      weekDays.querySelectorAll(".dayCard").forEach((n) => n.classList.remove("is-dragging", "is-dropTarget"));
-      stopDayDragAutoScroll();
-    });
+  if (weekDays) {
+    // Read-only: No drag and drop listeners
   }
 
   sessions.forEach((s, i) => {
@@ -4860,132 +4852,20 @@ function renderWeekDetails() {
 
     const titleRow = el("div", "dayTitleRow");
     const titleLeft = el("div", "dayTitleLeft");
-    const dragHandle = el("div", "dayDragHandle", "⋮⋮");
-    dragHandle.setAttribute("role", "button");
-    dragHandle.setAttribute("aria-label", "拖曳以重新排序");
-    dragHandle.draggable = true;
-    dragHandle.addEventListener("dragstart", (e) => {
-      if (!e.dataTransfer) return;
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", String(i));
-      if (weekDays) weekDays.classList.add("is-dragging");
-      card.classList.add("is-dragging");
-      startDayDragAutoScroll();
-    });
-    dragHandle.addEventListener("dragend", () => {
-      if (weekDays) weekDays.classList.remove("is-dragging");
-      if (weekDays) weekDays.querySelectorAll(".dayCard").forEach((n) => n.classList.remove("is-dragging", "is-dropTarget"));
-      stopDayDragAutoScroll();
-    });
-    titleLeft.appendChild(dragHandle);
+    // Read-only: No drag handle
     titleLeft.appendChild(el("div", "dayTitle", s.dayLabel));
     titleRow.appendChild(titleLeft);
 
-    card.addEventListener("dragover", (e) => {
-      e.preventDefault();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-      card.classList.add("is-dropTarget");
-    });
-    card.addEventListener("dragleave", (e) => {
-      const next = e.relatedTarget;
-      if (!next || !(next instanceof Node) || !card.contains(next)) {
-        card.classList.remove("is-dropTarget");
-      }
-    });
-    card.addEventListener("drop", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      card.classList.remove("is-dropTarget");
-      const raw = e.dataTransfer ? e.dataTransfer.getData("text/plain") : "";
-      const from = Number(raw);
-      if (!Number.isFinite(from)) return;
-
-      const rect = card.getBoundingClientRect();
-      const after = e.clientY > rect.top + rect.height / 2;
-      const to = i + (after ? 1 : 0);
-      reorderDaySession(state.selectedWeekIndex, from, to);
-      stopDayDragAutoScroll();
-    });
+    // Read-only: No drag listeners on card
 
     const dayDate = addDays(w.monday, i);
     const titleRight = el("div", "dayTitleRight");
     titleRight.appendChild(el("div", "dayDate", `${formatWeekdayEnShort(dayDate)} ${formatYMD(dayDate)}`));
 
     const workoutControls = el("div", "dayWorkoutControls");
-    workoutControls.appendChild(el("span", "muted", "當日訓練數量"));
-
-    const workoutSelect = document.createElement("select");
-    workoutSelect.className = "dayMiniSelect dayWorkoutSelect";
-    for (let v = 1; v <= 10; v++) {
-      const opt = document.createElement("option");
-      opt.value = String(v);
-      opt.textContent = String(v);
-      if (clamp(Number(s.workoutsCount) || 1, 1, 10) === v) opt.selected = true;
-      workoutSelect.appendChild(opt);
-    }
-    workoutSelect.addEventListener("change", () => {
-      const nextCount = clamp(Number(workoutSelect.value) || 1, 1, 10);
-      const prevCount = clamp(Number(s.workoutsCount) || 1, 1, 10);
-      if (nextCount === prevCount) return;
-
-      lockScrollPosition(() => {
-        pushHistory();
-        ensureSessionWorkouts(s);
-        s.workoutsCount = nextCount;
-        s.workouts = Array.isArray(s.workouts) ? s.workouts.slice(0, nextCount) : [];
-        while (s.workouts.length < nextCount) s.workouts.push({ duration: 0, rpe: 1 });
-        ensureSessionWorkouts(s);
-        persistState();
-        renderCalendar();
-        renderCharts();
-        renderWeekDetails();
-      });
-    });
-    workoutControls.appendChild(workoutSelect);
-
-    const helperBtn = document.createElement("button");
-    helperBtn.className = "btn btn--primary";
-    helperBtn.style.marginLeft = "8px";
-    helperBtn.style.padding = "0 8px";
-    helperBtn.style.height = "24px";
-    helperBtn.style.lineHeight = "22px";
-    helperBtn.style.fontSize = "12px";
-    helperBtn.textContent = "課表小助手";
-    helperBtn.addEventListener("click", () => {
-      openWorkoutHelperModal(s, () => {
-        ensureSessionWorkouts(s);
-        persistState();
-        renderCalendar();
-        renderCharts();
-        renderWeekDetails();
-      });
-    });
-    workoutControls.appendChild(helperBtn);
-
-    const resetBtn = document.createElement("button");
-    resetBtn.className = "btn btn--reset";
-    resetBtn.style.marginLeft = "4px";
-    resetBtn.style.padding = "0 8px";
-    resetBtn.style.height = "24px";
-    resetBtn.style.lineHeight = "22px";
-    resetBtn.style.fontSize = "12px";
-    resetBtn.textContent = "重設";
-    resetBtn.addEventListener("click", () => {
-      if (confirm("確定要重設此訓練嗎？")) {
-        lockScrollPosition(() => {
-          pushHistory();
-          s.workoutsCount = 1;
-          s.workouts = [{ duration: 0, rpe: 1 }];
-          s.note = "";
-          ensureSessionWorkouts(s);
-          persistState();
-          renderCalendar();
-          renderCharts();
-          renderWeekDetails();
-        });
-      }
-    });
-    workoutControls.appendChild(resetBtn);
+    workoutControls.appendChild(el("span", "muted", "當日訓練數量："));
+    workoutControls.appendChild(el("span", "", String(s.workoutsCount || 1)));
+    // Read-only: No helper/reset buttons or select
 
     titleRight.appendChild(workoutControls);
     titleRow.appendChild(titleRight);
@@ -4998,62 +4878,15 @@ function renderWeekDetails() {
 
       const durationWrap = el("div", "dayField");
       durationWrap.appendChild(el("span", "", "時長："));
-      const durationInput = document.createElement("input");
-      durationInput.className = "dayMiniInput";
-      durationInput.type = "number";
-      durationInput.inputMode = "numeric";
-      durationInput.min = "0";
-      durationInput.step = "1";
-      durationInput.value = Number(workout?.duration) > 0 ? String(Number(workout?.duration)) : "";
-      durationInput.addEventListener("change", () => {
-        const target = Array.isArray(s.workouts) ? s.workouts[workoutIndex] : null;
-        if (!target) return;
-        const raw = durationInput.value.trim();
-        const next = raw ? Math.max(0, Math.round(Number(raw) || 0)) : 0;
-        const prev = Number(target?.duration) || 0;
-        if (next === prev) return;
-        lockScrollPosition(() => {
-          pushHistory();
-          target.duration = next;
-          ensureSessionWorkouts(s);
-          persistState();
-          renderCalendar();
-          renderCharts();
-          renderWeekDetails();
-        });
-      });
-      durationWrap.appendChild(durationInput);
-      durationWrap.appendChild(el("span", "muted", "分鐘"));
+      const durationVal = Number(workout?.duration) > 0 ? String(Number(workout?.duration)) : "0";
+      durationWrap.appendChild(el("span", "", durationVal));
+      durationWrap.appendChild(el("span", "muted", " 分鐘"));
       metaRow.appendChild(durationWrap);
 
       const rpeWrap = el("div", "dayField");
       rpeWrap.appendChild(el("span", "", "RPE："));
-      const rpeSelect = document.createElement("select");
-      rpeSelect.className = "dayMiniSelect";
-      for (let v = 1; v <= 10; v++) {
-        const opt = document.createElement("option");
-        opt.value = String(v);
-        opt.textContent = String(v);
-        if (clamp(Number(workout?.rpe) || 1, 1, 10) === v) opt.selected = true;
-        rpeSelect.appendChild(opt);
-      }
-      rpeSelect.addEventListener("change", () => {
-        const target = Array.isArray(s.workouts) ? s.workouts[workoutIndex] : null;
-        if (!target) return;
-        const next = clamp(Number(rpeSelect.value) || 1, 1, 10);
-        const prev = clamp(Number(target?.rpe) || 1, 1, 10);
-        if (next === prev) return;
-        lockScrollPosition(() => {
-          pushHistory();
-          target.rpe = next;
-          ensureSessionWorkouts(s);
-          persistState();
-          renderCalendar();
-          renderCharts();
-          renderWeekDetails();
-        });
-      });
-      rpeWrap.appendChild(rpeSelect);
+      const rpeVal = String(clamp(Number(workout?.rpe) || 1, 1, 10));
+      rpeWrap.appendChild(el("span", "", rpeVal));
       metaRow.appendChild(rpeWrap);
 
       workoutsWrap.appendChild(metaRow);
@@ -5073,26 +4906,8 @@ function renderWeekDetails() {
 
     const noteWrap = el("div", "dayNote");
     noteWrap.appendChild(el("div", "dayNote__label", "備註"));
-    const noteInput = document.createElement("textarea");
-    noteInput.className = "dayNote__input";
-    noteInput.rows = 2;
-    noteInput.value = typeof s.note === "string" ? s.note : "";
-    let noteHistoryPushed = false;
-    noteInput.addEventListener("focus", () => {
-      noteHistoryPushed = false;
-    });
-    noteInput.addEventListener("input", () => {
-      const next = noteInput.value.slice(0, 1200);
-      if (noteInput.value !== next) noteInput.value = next;
-      if (s.note === next) return;
-      if (!noteHistoryPushed) {
-        pushHistory();
-        noteHistoryPushed = true;
-      }
-      s.note = next;
-      persistState();
-    });
-    noteWrap.appendChild(noteInput);
+    const noteText = el("div", "dayNote__text", typeof s.note === "string" ? s.note : "");
+    noteWrap.appendChild(noteText);
     card.appendChild(noteWrap);
 
   weekDays.appendChild(card);
@@ -5960,12 +5775,14 @@ function syncPlanStartedUi() {
   const autoFillAllBtn = document.getElementById("autoFillAllBtn");
   const raceInputBtn = document.getElementById("raceInputBtn");
   const exportPdfBtn = document.getElementById("exportPdfBtn");
+  const resetBtn = document.getElementById("resetBtn");
   const controls = [
     annualVolumeApplyBtn,
     annualVolumeClearBtn,
     autoFillAllBtn,
     raceInputBtn,
     exportPdfBtn,
+    resetBtn,
   ];
   if (startBtn) startBtn.style.display = state.planStarted ? "none" : "";
   controls.forEach((el) => {
@@ -6071,56 +5888,6 @@ function wireButtons() {
   }
 
 
-  const resetWeekBtn = document.getElementById("resetWeekBtn");
-  if (resetWeekBtn) {
-    resetWeekBtn.addEventListener("click", () => {
-      const ok = window.confirm("確定要重設本週課表？此操作會清除本週的每日課表內容。");
-      if (!ok) return;
-      pushHistory();
-      const w = state.weeks[state.selectedWeekIndex];
-      if (w) {
-        if (!Array.isArray(w.sessions)) w.sessions = getWeekSessions(w);
-        w.sessions.forEach((s) => {
-          s.workoutsCount = 1;
-          s.workouts = [{ duration: 0, rpe: 1 }];
-          s.note = "";
-        });
-      }
-      persistState();
-      updateHeader();
-      renderCalendar();
-      renderCharts();
-      renderWeekDetails();
-      showToast("已重設本週課表");
-    });
-  }
-
-  const reset52WeeksBtn = document.getElementById("reset52WeeksBtn");
-  if (reset52WeeksBtn) {
-    reset52WeeksBtn.addEventListener("click", () => {
-      const ok = window.confirm("確定要重設 52 週課表？此操作會清除所有週的每日課表內容。");
-      if (!ok) return;
-      pushHistory();
-      for (let i = 0; i < 52; i++) {
-        const w = state.weeks[i];
-        if (w) {
-          if (!Array.isArray(w.sessions)) w.sessions = getWeekSessions(w);
-          w.sessions.forEach((s) => {
-            s.workoutsCount = 1;
-            s.workouts = [{ duration: 0, rpe: 1 }];
-            s.note = "";
-          });
-        }
-      }
-      persistState();
-      updateHeader();
-      renderCalendar();
-      renderCharts();
-      renderWeekDetails();
-      showToast("已重設 52 週課表");
-    });
-  }
-
   const raceInputBtn = document.getElementById("raceInputBtn");
   if (raceInputBtn) {
     raceInputBtn.addEventListener("click", () => openRaceInputModal());
@@ -6179,6 +5946,7 @@ function wireButtons() {
     });
   }
 
+
   const paceDistSelect = document.getElementById("paceTestDistance");
   if (paceDistSelect && paceDistSelect.dataset.filled !== "1") {
     if (!paceDistSelect.options || paceDistSelect.options.length === 0) {
@@ -6229,20 +5997,17 @@ async function init() {
   wireTabs();
   wireButtons();
   await wireAuth();
-  if (!authUser) {
-    clearPersistedTrainingState();
+  
+  const persisted = loadPersistedState();
+  if (persisted) {
+    applyPersistedTrainingState(persisted);
+    updateHeader();
+    renderCalendar();
+    renderWeekPicker();
+    renderWeekDetails();
+    renderCharts();
   }
-  if (authUser) {
-    const persisted = loadPersistedState();
-    if (persisted) {
-      applyPersistedTrainingState(persisted);
-      updateHeader();
-      renderCalendar();
-      renderWeekPicker();
-      renderWeekDetails();
-      renderCharts();
-    }
-  }
+
   if (document.getElementById("calendarShell")) {
     let initialTab = getTabKeyFromHash();
     if (!initialTab) {
