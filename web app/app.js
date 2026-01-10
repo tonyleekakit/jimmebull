@@ -4849,49 +4849,6 @@ function reorderDaySession(weekIndex, fromIndex, toIndex) {
 
 let weekDetailsMount = null;
 
-function getWorkoutMetrics(session) {
-  const defaults = { sets: "1", dist: "—", pace: "—", zone: "—", zoneLabel: "—" };
-  if (!session) return defaults;
-  
-  // Sets
-  let sets = "1";
-  const note = typeof session.note === "string" ? session.note : "";
-  const setMatch = note.match(/主課：(\d+)\s*[×x]/);
-  if (setMatch) sets = setMatch[1];
-
-  // Zone
-  const z = clamp(Number(session.zone) || 1, 1, 6);
-  const zone = `Z${z}`;
-  const zoneLabels = ["恢復", "有氧耐力", "節奏", "乳酸閾值", "最大攝氧量", "無氧"];
-  const zoneLabel = zoneLabels[z - 1] || "—";
-  
-  // Pace & Dist
-  let dist = "—";
-  let pace = "—";
-  
-  const distMatch = note.match(/（約\s*(.+?)\s*@\s*(.+?)\/km）/);
-  if (distMatch) {
-    dist = distMatch[1];
-    pace = distMatch[2];
-  } else if (z === 2 && Number.isFinite(state.vdot) && state.vdot > 0) {
-    const duration = Math.max(0, Math.round(Number(session.duration) || 0));
-    if (duration > 0) {
-        const p1 = paceSecondsPerKmFromVdotFraction(state.vdot, 0.59);
-        const p2 = paceSecondsPerKmFromVdotFraction(state.vdot, 0.74);
-        if (p1 && p2) {
-            pace = `${formatPaceFromSecondsPerKm(p1)}–${formatPaceFromSecondsPerKm(p2)}`;
-            const avgSec = (p1 + p2) / 2;
-            const distKm = duration / (avgSec / 60);
-            dist = `${distKm.toFixed(1)}km`;
-        }
-    }
-  }
-  
-  if (z === 1) { dist = "—"; pace = "—"; sets = "—"; }
-
-  return { sets, dist, pace, zone, zoneLabel };
-}
-
 function renderWeekDetails() {
   const w = state.weeks[state.selectedWeekIndex];
   let meta = document.getElementById("weekMeta");
@@ -4911,6 +4868,10 @@ function renderWeekDetails() {
   meta.textContent = `${volumeLabel} · ${srpeLabel}`;
   weekDays.replaceChildren();
 
+  if (weekDays) {
+    // Read-only: No drag and drop listeners
+  }
+
   sessions.forEach((s, i) => {
     const card = el("div", "dayCard");
     card.dataset.dayIndex = String(i);
@@ -4918,23 +4879,30 @@ function renderWeekDetails() {
 
     const titleRow = el("div", "dayTitleRow");
     const titleLeft = el("div", "dayTitleLeft");
+    // Read-only: No drag handle
     titleLeft.appendChild(el("div", "dayTitle", s.dayLabel));
     titleRow.appendChild(titleLeft);
+
+    // Read-only: No drag listeners on card
 
     const dayDate = addDays(w.monday, i);
     const titleRight = el("div", "dayTitleRight");
     titleRight.appendChild(el("div", "dayDate", `${formatWeekdayEnShort(dayDate)} ${formatYMD(dayDate)}`));
-    
+
+    const workoutControls = el("div", "dayWorkoutControls");
+    workoutControls.appendChild(el("span", "muted", "當日訓練數量："));
+    workoutControls.appendChild(el("span", "", String(s.workoutsCount || 1)));
+    // Read-only: No helper/reset buttons or select
+
+    titleRight.appendChild(workoutControls);
     titleRow.appendChild(titleRight);
     card.appendChild(titleRow);
 
     const workoutsWrap = el("div", "dayWorkouts");
     card.appendChild(workoutsWrap);
     s.workouts.forEach((workout, workoutIndex) => {
-      const metrics = getWorkoutMetrics(workout);
       const metaRow = el("div", "dayMeta");
 
-      // 1. Duration
       const durationWrap = el("div", "dayField");
       durationWrap.appendChild(el("span", "", "時長："));
       const durationVal = Number(workout?.duration) > 0 ? String(Number(workout?.duration)) : "0";
@@ -4942,45 +4910,42 @@ function renderWeekDetails() {
       durationWrap.appendChild(el("span", "muted", " 分鐘"));
       metaRow.appendChild(durationWrap);
 
-      // 2. Sets
-      const setsWrap = el("div", "dayField");
-      setsWrap.appendChild(el("span", "", "組數："));
-      setsWrap.appendChild(el("span", "", metrics.sets));
-      metaRow.appendChild(setsWrap);
-
-      // 3. Approx Distance
-      const distWrap = el("div", "dayField");
-      distWrap.appendChild(el("span", "", "大約距離："));
-      distWrap.appendChild(el("span", "", metrics.dist));
-      metaRow.appendChild(distWrap);
-
-      // 4. Pace
-      const paceWrap = el("div", "dayField");
-      paceWrap.appendChild(el("span", "", "配速："));
-      paceWrap.appendChild(el("span", "", metrics.pace));
-      metaRow.appendChild(paceWrap);
-
-      // 5. RPE
       const rpeWrap = el("div", "dayField");
       rpeWrap.appendChild(el("span", "", "RPE："));
       const rpeVal = String(clamp(Number(workout?.rpe) || 1, 1, 10));
       rpeWrap.appendChild(el("span", "", rpeVal));
       metaRow.appendChild(rpeWrap);
 
-      // 6. Zone
-      const zoneWrap = el("div", "dayField");
-      zoneWrap.appendChild(el("span", "", "訓練區間："));
-      zoneWrap.appendChild(el("span", "", `${metrics.zone} (${metrics.zoneLabel})`));
-      metaRow.appendChild(zoneWrap);
-
       workoutsWrap.appendChild(metaRow);
     });
 
-    weekDays.appendChild(card);
+    const dayDateYmd = formatYMD(addDays(w.monday, i));
+    const dayRaces = (Array.isArray(w.races) ? w.races : [])
+      .filter((r) => (r?.date || "") === dayDateYmd)
+      .map((r) => (r?.name || "").trim())
+      .filter(Boolean);
+    if (dayRaces.length) {
+      const racesEl = el("div", "dayRaces");
+      racesEl.appendChild(el("span", "dayRaces__label", "比賽："));
+      racesEl.appendChild(el("span", "dayRaces__names", dayRaces.join(", ")));
+      card.appendChild(racesEl);
+    }
+
+    const noteWrap = el("div", "dayNote");
+    noteWrap.appendChild(el("div", "dayNote__label", "備註"));
+    const noteText = el("div", "dayNote__text", typeof s.note === "string" ? s.note : "");
+    noteWrap.appendChild(noteText);
+    card.appendChild(noteWrap);
+
+  weekDays.appendChild(card);
   });
 
   // Add Complete Button (Strict Mode) if showing the latest unlocked week or the one before it
   const unlocked = getUnlockedWeekIndex();
+  // Show button if this is the current active week (unlocked) OR if it's the previous week but we haven't moved yet (unlocked - 1)
+  // Actually, user wants "Complete This Week" on Week 1. If date passed, move to Week 2.
+  // So we show it on the currently selected week as long as it's <= unlocked.
+  // And strictly, we only need it on the latest week to "advance".
   if (state.planStarted && state.selectedWeekIndex <= unlocked && state.selectedWeekIndex < 51) {
     const btnRow = el("div", "dayCard");
     btnRow.style.textAlign = "center";
