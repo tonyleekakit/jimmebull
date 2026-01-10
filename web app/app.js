@@ -5822,6 +5822,7 @@ function applyWizard(data) {
    updateHeader();
    renderCalendar();
   renderCharts();
+  renderWeekPicker();
   renderWeekDetails();
   syncPlanStartedUi();
   showToast("已建立計劃！");
