@@ -3774,6 +3774,7 @@ function persistState() {
   try {
     const payload = {
       startDate: formatYMD(state.startDate),
+      isPaid: state.isPaid === true,
       ytdVolumeHrs: Number.isFinite(state.ytdVolumeHrs) ? state.ytdVolumeHrs : null,
       vdot: Number.isFinite(state.vdot) ? state.vdot : null,
       planStarted: state.planStarted === true,
@@ -3817,6 +3818,7 @@ function applyPersistedTrainingState(persisted) {
   if (persistedStartDate) {
     state.startDate = startOfMonday(persistedStartDate);
   }
+  state.isPaid = persisted?.isPaid === true;
   state.ytdVolumeHrs = Number.isFinite(persisted?.ytdVolumeHrs) ? persisted.ytdVolumeHrs : null;
   state.vdot = Number.isFinite(persisted?.vdot) ? persisted.vdot : null;
   state.planBaseVolume = Number.isFinite(persisted?.planBaseVolume) ? persisted.planBaseVolume : null;
@@ -4373,6 +4375,7 @@ async function wireAuth() {
 
 const state = {
   connected: false,
+  isPaid: false,
   startDate: startOfMonday(new Date("2025-03-03T00:00:00")),
   ytdVolumeHrs: null,
   vdot: null,
@@ -4868,6 +4871,37 @@ function renderWeekDetails() {
   meta.textContent = `${volumeLabel} · ${srpeLabel}`;
   weekDays.replaceChildren();
 
+  // Locked View for Unpaid Users (Week 2 onwards)
+  if (!state.isPaid && state.selectedWeekIndex > 0) {
+    const lockedWrap = el("div", "dayCard");
+    lockedWrap.style.textAlign = "center";
+    lockedWrap.style.padding = "40px 20px";
+    lockedWrap.style.display = "flex";
+    lockedWrap.style.flexDirection = "column";
+    lockedWrap.style.alignItems = "center";
+    lockedWrap.style.gap = "16px";
+
+    const lockIcon = el("div", "", "🔒");
+    lockIcon.style.fontSize = "48px";
+    
+    const lockTitle = el("div", "", "此內容需要升級");
+    lockTitle.style.fontSize = "18px";
+    lockTitle.style.fontWeight = "600";
+    
+    const lockDesc = el("div", "muted", "您目前只能查看第 1 週的訓練內容。請升級以解鎖完整 52 週訓練計畫。");
+    
+    const upgradeBtn = el("button", "btn btn--primary", "立即升級");
+    upgradeBtn.onclick = () => openPaymentModal();
+
+    lockedWrap.appendChild(lockIcon);
+    lockedWrap.appendChild(lockTitle);
+    lockedWrap.appendChild(lockDesc);
+    lockedWrap.appendChild(upgradeBtn);
+    
+    weekDays.appendChild(lockedWrap);
+    return; // Stop rendering details
+  }
+
   if (weekDays) {
     // Read-only: No drag and drop listeners
   }
@@ -4959,6 +4993,13 @@ function renderWeekDetails() {
       const currentUnlocked = getUnlockedWeekIndex();
       if (currentUnlocked > state.selectedWeekIndex) {
         // Time has passed, allowed to advance
+        
+        // Payment Wall: If completing Week 1 (index 0) to go to Week 2 (index 1)
+        if (state.selectedWeekIndex === 0 && !state.isPaid) {
+          openPaymentModal();
+          return;
+        }
+
         pushHistory();
         selectWeek(state.selectedWeekIndex + 1);
         showToast("已完成此週，進入下一週");
@@ -5015,7 +5056,67 @@ function openWeekDetailsModal(weekIndex) {
   selectWeek(clamp(weekIndex, 0, 51));
 }
 
+function openPaymentModal() {
+  const overlay = el("div", "overlay");
+  
+  const modal = el("div", "modal");
+  modal.style.maxWidth = "400px";
+  modal.style.textAlign = "center";
 
+  const title = el("div", "modal__title", "解鎖完整計畫");
+  title.style.marginBottom = "16px";
+  
+  const desc = el("div", "", "您已完成第 1 週的體驗。如需繼續瀏覽第 2 週及之後的訓練內容，請先付款解鎖完整計畫。");
+  desc.style.marginBottom = "24px";
+  desc.style.lineHeight = "1.5";
+  desc.style.color = "var(--text)";
+
+  const actions = el("div", "modal__actions");
+  actions.style.justifyContent = "center";
+  actions.style.gap = "16px";
+
+  const cancelBtn = el("button", "btn", "稍後再說");
+  cancelBtn.onclick = () => overlay.remove();
+
+  const payBtn = el("button", "btn btn--primary", "立即付款 (模擬)");
+  payBtn.onclick = () => {
+    // 模擬後端付款驗證
+    // 實際開發時，此處應跳轉至 Stripe 付款頁面或呼叫後端 API
+    simulatePaymentSuccess(); 
+  };
+  
+  function simulatePaymentSuccess() {
+    state.isPaid = true;
+    persistState();
+    overlay.remove();
+    
+    // Auto advance after payment if we were on Week 1
+    if (state.selectedWeekIndex === 0) {
+        pushHistory();
+        selectWeek(state.selectedWeekIndex + 1);
+    } else {
+        // Refresh current view to unlock
+        renderWeekDetails();
+    }
+    showToast("付款成功！已解鎖完整計畫");
+  }
+
+  actions.appendChild(cancelBtn);
+  actions.appendChild(payBtn);
+
+  modal.appendChild(title);
+  modal.appendChild(desc);
+  modal.appendChild(actions);
+  
+  overlay.appendChild(modal);
+  
+  // Close on overlay click
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+
+  document.body.appendChild(overlay);
+}
 
 let toastTimer = null;
 function showToast(text, options) {
