@@ -3805,6 +3805,7 @@ function persistState() {
       })),
       selectedWeekIndex: state.selectedWeekIndex,
       connected: state.connected,
+      manualAdvanceWeeks: state.manualAdvanceWeeks || 0,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     scheduleCloudSave(payload);
@@ -3820,6 +3821,7 @@ function applyPersistedTrainingState(persisted) {
   state.vdot = Number.isFinite(persisted?.vdot) ? persisted.vdot : null;
   state.planBaseVolume = Number.isFinite(persisted?.planBaseVolume) ? persisted.planBaseVolume : null;
   state.planStarted = persisted?.planStarted === true;
+  state.manualAdvanceWeeks = Number.isFinite(persisted?.manualAdvanceWeeks) ? persisted.manualAdvanceWeeks : 0;
   state.annualVolumeSettings =
     persisted?.annualVolumeSettings && typeof persisted.annualVolumeSettings === "object"
       ? {
@@ -4651,14 +4653,12 @@ function renderCalendar() {
     for (let i = 0; i < 52; i++) {
       const w = state.weeks[i];
       const cell = el("div", "calCell");
+      if (i === state.selectedWeekIndex) {
+        cell.classList.add("is-current");
+      }
 
       if (row.type === "weekBtn") {
-        const btn = el("button", "calWeekBtn", String(w.weekNo));
-        if (i === state.selectedWeekIndex) btn.classList.add("is-selected");
-        btn.addEventListener("click", () => {
-          selectWeek(i);
-        });
-        cell.appendChild(btn);
+        setCellText(cell, String(w.weekNo));
       } else if (row.type === "date") {
         setCellText(cell, formatMD(w.monday));
       } else if (row.type === "blockSelect") {
@@ -4727,18 +4727,45 @@ function renderWeekPicker() {
   if (!select) return;
   select.replaceChildren();
 
+  const maxAllowed = getUnlockedWeekIndex();
+
   for (const w of state.weeks) {
+    // If plan started, only show up to maxAllowed
+    if (state.planStarted && w.index > maxAllowed) break;
+
     const opt = document.createElement("option");
     opt.value = String(w.index);
     opt.textContent = weekLabelZh(w.weekNo);
     if (w.index === state.selectedWeekIndex) opt.selected = true;
     select.appendChild(opt);
   }
+  
+  // If current selection is out of bounds, reset it
+  if (state.planStarted && state.selectedWeekIndex > maxAllowed) {
+    selectWeek(maxAllowed);
+    return; // selectWeek will trigger re-render
+  }
 
   select.onchange = () => {
     const idx = Number(select.value);
     selectWeek(clamp(idx, 0, 51));
   };
+}
+
+function getUnlockedWeekIndex() {
+  if (!state.planStarted || !state.startDate) return 51;
+  const now = new Date();
+  const diff = now - state.startDate;
+  // Weeks passed since start (0-based)
+  // Week 1 starts at t=0. Week 2 starts at t=7days.
+  // So if t < 7 days, index is 0.
+  let idx = Math.floor(diff / (7 * 24 * 3600 * 1000));
+  if (idx < 0) idx = 0;
+  
+  // Add manual advance (for testing)
+  idx += (state.manualAdvanceWeeks || 0);
+  
+  return clamp(idx, 0, 51);
 }
 
 function relabelWeekSessions(week) {
@@ -4912,6 +4939,38 @@ function renderWeekDetails() {
 
   weekDays.appendChild(card);
   });
+
+  // Add Complete Button (Strict Mode) if showing the latest unlocked week or the one before it
+  const unlocked = getUnlockedWeekIndex();
+  // Show button if this is the current active week (unlocked) OR if it's the previous week but we haven't moved yet (unlocked - 1)
+  // Actually, user wants "Complete This Week" on Week 1. If date passed, move to Week 2.
+  // So we show it on the currently selected week as long as it's <= unlocked.
+  // And strictly, we only need it on the latest week to "advance".
+  if (state.planStarted && state.selectedWeekIndex <= unlocked && state.selectedWeekIndex < 51) {
+    const btnRow = el("div", "dayCard");
+    btnRow.style.textAlign = "center";
+    btnRow.style.padding = "16px";
+    btnRow.style.cursor = "pointer";
+    btnRow.style.backgroundColor = "#e0f2fe"; // Light blue
+    
+    const btn = el("button", "btn btn--primary", "完成此週");
+    btn.onclick = () => {
+      // Re-check time
+      const currentUnlocked = getUnlockedWeekIndex();
+      if (currentUnlocked > state.selectedWeekIndex) {
+        // Time has passed, allowed to advance
+        pushHistory();
+        selectWeek(state.selectedWeekIndex + 1);
+        showToast("已完成此週，進入下一週");
+      } else {
+        // Time has not passed
+        alert("這週還沒結束");
+      }
+    };
+    
+    btnRow.appendChild(btn);
+    weekDays.appendChild(btnRow);
+  }
 }
 
 function openWeekDetailsModal(weekIndex) {
@@ -5770,21 +5829,30 @@ function applyWizard(data) {
 
 function syncPlanStartedUi() {
   const startBtn = document.getElementById("startWizardBtn");
-  const annualVolumeApplyBtn = document.getElementById("annualVolumeApplyBtn");
   const annualVolumeClearBtn = document.getElementById("annualVolumeClearBtn");
   const autoFillAllBtn = document.getElementById("autoFillAllBtn");
-  const raceInputBtn = document.getElementById("raceInputBtn");
   const exportPdfBtn = document.getElementById("exportPdfBtn");
   const resetBtn = document.getElementById("resetBtn");
   const controls = [
-    annualVolumeApplyBtn,
     annualVolumeClearBtn,
     autoFillAllBtn,
-    raceInputBtn,
     exportPdfBtn,
-    resetBtn,
   ];
-  if (startBtn) startBtn.style.display = state.planStarted ? "none" : "";
+  
+  if (startBtn) {
+    startBtn.style.display = "";
+    startBtn.textContent = state.planStarted ? "重設計劃" : "開始跑步計劃";
+    if (state.planStarted) {
+      startBtn.classList.remove("btn--primary");
+      startBtn.classList.add("btn--reset");
+    } else {
+      startBtn.classList.add("btn--primary");
+      startBtn.classList.remove("btn--reset");
+    }
+  }
+  
+  if (resetBtn) resetBtn.style.display = "none";
+
   controls.forEach((el) => {
     if (!el) return;
     el.style.display = state.planStarted ? "" : "none";
@@ -5794,7 +5862,34 @@ function syncPlanStartedUi() {
 function wireButtons() {
   const startWizardBtn = document.getElementById("startWizardBtn");
   if (startWizardBtn) {
-    startWizardBtn.addEventListener("click", () => openDesignWizard());
+    startWizardBtn.addEventListener("click", () => {
+      if (state.planStarted) {
+        const ok = window.confirm("確定要重啟計劃？所有資料將重置。");
+        if (!ok) return;
+        pushHistory();
+        
+        state.planStarted = false;
+        state.ytdVolumeHrs = null;
+        state.vdot = null;
+        state.annualVolumeSettings = { startWeeklyHrs: null, maxUpPct: 12, maxDownPct: 25 };
+        state.weeks = [];
+        state.manualAdvanceWeeks = 0;
+        buildInitialWeeks();
+        
+        state.selectedWeekIndex = 0;
+        
+        persistState();
+        updateHeader();
+        renderCalendar();
+        renderWeekPicker();
+        renderWeekDetails();
+        renderCharts();
+        syncPlanStartedUi();
+        showToast("已重置計劃");
+      } else {
+        openDesignWizard();
+      }
+    });
   }
   syncPlanStartedUi();
 
@@ -5818,7 +5913,6 @@ function wireButtons() {
   }
 
   const annualVolumeInput = document.getElementById("annualVolumeInput");
-  const annualVolumeApplyBtn = document.getElementById("annualVolumeApplyBtn");
   const annualVolumeClearBtn = document.getElementById("annualVolumeClearBtn");
   const autoFillAllBtn = document.getElementById("autoFillAllBtn");
   if (annualVolumeInput) {
@@ -5826,11 +5920,7 @@ function wireButtons() {
     annualVolumeInput.addEventListener("keydown", (e) => {
       if (e.key !== "Enter") return;
       e.preventDefault();
-      annualVolumeApplyBtn?.click();
-    });
-  }
-  if (annualVolumeApplyBtn && annualVolumeInput) {
-    annualVolumeApplyBtn.addEventListener("click", () => {
+      
       const raw = String(annualVolumeInput.value || "").trim();
       const v = Number(raw);
       if (!Number.isFinite(v) || v <= 0) {
@@ -5851,6 +5941,7 @@ function wireButtons() {
       showToast("已更新年總訓練量設定並重新計算課表");
     });
   }
+
   if (annualVolumeClearBtn && annualVolumeInput) {
     annualVolumeClearBtn.addEventListener("click", () => {
       pushHistory();
@@ -5888,50 +5979,10 @@ function wireButtons() {
   }
 
 
-  const raceInputBtn = document.getElementById("raceInputBtn");
-  if (raceInputBtn) {
-    raceInputBtn.addEventListener("click", () => openRaceInputModal());
-  }
 
   const exportPdfBtn = document.getElementById("exportPdfBtn");
   if (exportPdfBtn) exportPdfBtn.addEventListener("click", () => exportCalendarPdf());
 
-  const resetBtn = document.getElementById("resetBtn");
-  if (resetBtn) resetBtn.addEventListener("click", () => {
-    const ok = window.confirm("確定要重設表格內容？此操作會清除週次設定 (階段、訓練量)，但保留每日課表。");
-    if (!ok) return;
-    pushHistory();
-    
-    if (Array.isArray(state.weeks) && state.weeks.length === 52) {
-      for (const w of state.weeks) {
-        w.races = [];
-        w.priority = "";
-        w.block = "Base";
-        w.blockAuto = true;
-        w.season = "";
-        w.phases = [];
-        w.phasesAuto = true;
-        w.volumeHrs = "";
-        w.volumeMode = "direct";
-        w.volumeFactor = 1.2;
-        w.volumeFactorAuto = true;
-      }
-    } else {
-      const connected = state.connected;
-      buildInitialWeeks();
-      state.connected = connected;
-    }
-
-    state.selectedWeekIndex = 0;
-    state.planStarted = false;
-    persistState();
-    updateHeader();
-    renderCalendar();
-    renderWeekPicker();
-    renderWeekDetails();
-    syncPlanStartedUi();
-    showToast("已重設表格內容 (保留每日課表)");
-  });
 
   const generateBtn = document.getElementById("generateBtn");
   if (generateBtn) {
@@ -6001,11 +6052,18 @@ async function init() {
   const persisted = loadPersistedState();
   if (persisted) {
     applyPersistedTrainingState(persisted);
+    
+    // Auto-advance to current unlocked week if plan started
+    if (state.planStarted) {
+      state.selectedWeekIndex = getUnlockedWeekIndex();
+    }
+
     updateHeader();
     renderCalendar();
     renderWeekPicker();
     renderWeekDetails();
     renderCharts();
+    syncPlanStartedUi();
   }
 
   if (document.getElementById("calendarShell")) {

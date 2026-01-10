@@ -18,15 +18,15 @@
   </head>
   <body>
     <header class="topbar">
+      <a class="brand" href="./index.html" aria-label="返回訓練調控">
+        <img class="brand__img" src="./assets/logo.png" alt="Logo" onerror="this.style.display='none';" />
+      </a>
       <nav class="tabs" aria-label="主要">
         <span class="tab is-active">訓練調控</span>
         <a href="./pace-calculator.html" class="tab">配速計算機</a>
         <a href="./blog.html" class="tab">部落格</a>
         <a href="./contact.html" class="tab">聯絡我們</a>
       </nav>
-      <a class="brand" href="./index.html" aria-label="返回訓練調控">
-        <img class="brand__img" src="./assets/logo.png" alt="Logo" onerror="this.style.display='none';" />
-      </a>
       <button id="authBtn" class="btn btn--primary authBtn" type="button">登入</button>
     </header>
 
@@ -48,8 +48,6 @@
                 aria-label="年總訓練量（小時）"
               />
             </label>
-            <button id="annualVolumeApplyBtn" class="btn" type="button">套用</button>
-            <button id="raceInputBtn" class="btn btn--primary" type="button">輸入比賽</button>
             <button id="resetBtn" class="btn btn--reset" type="button" style="display: none;">重設</button>
           </div>
         </div>
