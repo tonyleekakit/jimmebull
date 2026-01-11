@@ -1,119 +1,114 @@
-<!doctype html>
-<html lang="zh-HK">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>訓練調控</title>
-    <meta name="description" content="訓練調控：52 週訓練表、週期設定、訓練量自動計算與風險指標 (ACWR/單調度)，支援比賽週期與每日課表管理。" />
-    <link rel="icon" type="image/png" href="./assets/logo.png" />
-    <link rel="apple-touch-icon" href="./assets/logo.png" />
-    <link rel="stylesheet" href="./styles.css?v=2.7" />
-    <link rel="canonical" href="https://trainingmon.com/" />
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://trainingmon.com/" />
-    <meta property="og:title" content="訓練調控 | Training Monitor" />
-    <meta property="og:description" content="年度訓練計劃管理：週期化、訓練量調控與風險指標，搭配配速計算機與部落格教學。" />
-    <meta property="og:image" content="https://trainingmon.com/assets/logo.png" />
-    <meta name="twitter:card" content="summary_large_image" />
-  </head>
-  <body>
-    <header class="topbar">
-      <a class="brand" href="./index.html" aria-label="返回訓練調控">
-        <img class="brand__img" src="./assets/logo.png" alt="Logo" onerror="this.style.display='none';" />
-      </a>
-      <nav class="tabs" aria-label="主要">
-        <span class="tab is-active">訓練調控</span>
-        <a href="./pace-calculator.html" class="tab">配速計算機</a>
-        <a href="./blog.html" class="tab">部落格</a>
-        <a href="./contact.html" class="tab">聯絡我們</a>
-      </nav>
-      <button id="authBtn" class="btn btn--primary authBtn" type="button">登入</button>
-    </header>
-
-    <main class="page">
-      <section id="tab-plan" class="tabPanel is-active" aria-label="訓練調控">
-        <div class="planActions">
-          <div class="planActions__right">
-            <button id="startWizardBtn" class="btn btn--primary" type="button">開始跑步計劃</button>
-            <label class="annualVolumeField" aria-label="年總訓練量" style="display: none;">
-              <span class="muted">年總訓練量（小時）</span>
-              <input
-                id="annualVolumeInput"
-                class="input"
-                type="number"
-                inputmode="decimal"
-                step="1"
-                min="0"
-                placeholder="例如 320"
-                aria-label="年總訓練量（小時）"
-              />
-            </label>
-            <button id="resetBtn" class="btn btn--reset" type="button" style="display: none;">重設</button>
-          </div>
-        </div>
-
-        <div id="plannedVolume52" class="calendarSummary" aria-label="52 週計劃訓練量"></div>
-
-        <div id="calendarShell" class="calendarShell" aria-label="訓練表">
-          <div class="calendarSizer" aria-label="表格大小">
-            <button id="calSizeUp" class="iconBtn" type="button" aria-label="放大" title="放大">+</button>
-            <input id="calSizeRange" class="calSizeRange" type="range" min="70" max="140" step="5" value="100" aria-label="表格大小" />
-            <button id="calSizeDown" class="iconBtn" type="button" aria-label="縮小" title="縮小">−</button>
-          </div>
-          <div class="calendarWrap">
-            <div id="calendar" class="calendar" role="grid" aria-label="52 週訓練表"></div>
-          </div>
-        </div>
-
-        <section class="weekSection" aria-label="每週詳情">
-          <div class="weekHeader">
-            <div class="weekPicker">
-              <span class="muted">選擇週</span>
-              <select id="weekSelect" aria-label="選擇週"></select>
-            </div>
-            <div id="weekMeta" class="muted"></div>
-          </div>
-          <div id="weekDays" class="weekDays" aria-label="Day 卡片"></div>
-        </section>
-
-        <div id="chartsRoot" class="chartsGrid" aria-label="圖表內容"></div>
-      </section>
-    
-
-    <script>
-      try {
-        const ld = {
-          "@context": "https://schema.org",
-          "@type": "WebSite",
-          "name": "訓練調控 | Training Monitor",
-          "url": "https://trainingmon.com/",
-          "potentialAction": {
-            "@type": "SearchAction",
-            "target": "https://trainingmon.com/blog.html?q={search_term_string}",
-            "query-input": "required name=search_term_string"
-          }
-        };
-        const script = document.createElement("script");
-        script.type = "application/ld+json";
-        script.text = JSON.stringify(ld);
-        document.head.appendChild(script);
-      } catch(e) {}
-    </script>
-
-      <!-- 配速計算機 Tab Content Moved to pace-calculator.html -->
-
+<!doctype html> 
+ <html lang="zh-HK"> 
+   <head> 
+     <meta charset="UTF-8" /> 
+     <meta name="viewport" content="width=device-width, initial-scale=1.0" /> 
+     <title>訓練調控</title> 
+     <meta name="description" content="訓練調控：52 週訓練表、週期設定、訓練量自動計算與風險指標 (ACWR/單調度)，支援比賽週期與每日課表管理。" /> 
+     <link rel="icon" type="image/png" href="./assets/logo.png" /> 
+     <link rel="apple-touch-icon" href="./assets/logo.png" /> 
+     <link rel="stylesheet" href="./styles.css?v=2.7" /> 
+     <link rel="canonical" href=" https://trainingmon.com/ " /> 
+     <meta property="og:type" content="website" /> 
+     <meta property="og:url" content=" https://trainingmon.com/ " /> 
+     <meta property="og:title" content="訓練調控 | Training Monitor" /> 
+     <meta property="og:description" content="年度訓練計劃管理：週期化、訓練量調控與風險指標，搭配配速計算機與部落格教學。" /> 
+     <meta property="og:image" content=" https://trainingmon.com/assets/logo.png " /> 
+     <meta name="twitter:card" content="summary_large_image" /> 
+   </head> 
+   <body> 
+     <header class="topbar"> 
+       <a class="brand" href="./index.html" aria-label="返回訓練調控"> 
+         <img class="brand__img" src="./assets/logo.png" alt="Logo" onerror="this.style.display='none';" /> 
+       </a> 
+       <nav class="tabs" aria-label="主要"> 
+         <span class="tab is-active">訓練調控</span> 
+         <a href="./pace-calculator.html" class="tab">配速計算機</a> 
+         <a href="./blog.html" class="tab">部落格</a> 
+         <a href="./contact.html" class="tab">聯絡我們</a> 
+       </nav> 
+       <button id="authBtn" class="btn btn--primary authBtn" type="button">登入</button> 
+     </header> 
+  
+     <main class="page"> 
+       <section id="tab-plan" class="tabPanel is-active" aria-label="訓練調控"> 
+         <div class="planActions"> 
+           <div class="planActions__right"> 
+             <button id="startWizardBtn" class="btn btn--primary" type="button">開始跑步計劃</button> 
+             <label class="annualVolumeField" aria-label="年總訓練量" style="display: none;"> 
+               <span class="muted">年總訓練量（小時）</span> 
+               <select id="annualVolumeInput" class="input" aria-label="年總訓練量（小時）">
+                 <option value="150">150小時(初階)</option>
+                 <option value="200">200小時(中階)</option>
+                 <option value="250">250小時(高階)</option>
+               </select>
+             </label> 
+             <button id="resetBtn" class="btn btn--reset" type="button" style="display: none;">重設</button> 
+           </div> 
+         </div> 
+  
+         <div id="plannedVolume52" class="calendarSummary" aria-label="52 週計劃訓練量"></div> 
+  
+         <div id="calendarShell" class="calendarShell" aria-label="訓練表"> 
+           <div class="calendarSizer" aria-label="表格大小"> 
+             <button id="calSizeUp" class="iconBtn" type="button" aria-label="放大" title="放大">+</button> 
+             <input id="calSizeRange" class="calSizeRange" type="range" min="70" max="140" step="5" value="100" aria-label="表格大小" /> 
+             <button id="calSizeDown" class="iconBtn" type="button" aria-label="縮小" title="縮小">−</button> 
+           </div> 
+           <div class="calendarWrap"> 
+             <div id="calendar" class="calendar" role="grid" aria-label="52 週訓練表"></div> 
+           </div> 
+         </div> 
+  
+         <section class="weekSection" aria-label="每週詳情"> 
+           <div class="weekHeader"> 
+             <div class="weekPicker"> 
+               <span class="muted">選擇週</span> 
+               <select id="weekSelect" aria-label="選擇週"></select> 
+             </div> 
+             <div id="weekMeta" class="muted"></div> 
+           </div> 
+           <div id="weekDays" class="weekDays" aria-label="Day 卡片"></div> 
+         </section> 
+  
+         <div id="chartsRoot" class="chartsGrid" aria-label="圖表內容"></div> 
+       </section> 
       
-    </main>
-
-    
-
-    <script>
-      globalThis.__SUPABASE__ = {
-        url: "https://yonmaiyxjewsdnyvkzvm.supabase.co",
-        anonKey: "sb_publishable_JjjPDuMbjhS6NsOiNWn9YQ_5VrjOFqN",
-      };
-    </script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./app.js?v=21"></script>
-  </body>
-</html>
+  
+     <script> 
+       try { 
+         const ld = { 
+           "@context": " https://schema.org ", 
+           "@type": "WebSite", 
+           "name": "訓練調控 | Training Monitor", 
+           "url": " https://trainingmon.com/ ", 
+           "potentialAction": { 
+             "@type": "SearchAction", 
+             "target": " https://trainingmon.com/blog.html?q={search_term_string} ", 
+             "query-input": "required name=search_term_string" 
+           } 
+         }; 
+         const script = document.createElement("script"); 
+         script.type = "application/ld+json"; 
+         script.text = JSON.stringify(ld); 
+         document.head.appendChild(script); 
+       } catch(e) {} 
+     </script> 
+  
+       <!-- 配速計算機 Tab Content Moved to pace-calculator.html --> 
+  
+        
+     </main> 
+  
+      
+  
+     <script> 
+       globalThis.__SUPABASE__ = { 
+         url: " https://yonmaiyxjewsdnyvkzvm.supabase.co ", 
+         anonKey: "sb_publishable_JjjPDuMbjhS6NsOiNWn9YQ_5VrjOFqN", 
+       }; 
+     </script> 
+     <script src=" https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2 "></script> 
+     <script src="./app.js?v=21"></script> 
+   </body> 
+ </html>

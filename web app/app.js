@@ -4853,7 +4853,6 @@ function reorderDaySession(weekIndex, fromIndex, toIndex) {
 let weekDetailsMount = null;
 
 function renderWeekDetails() {
-  const w = state.weeks[state.selectedWeekIndex];
   let meta = document.getElementById("weekMeta");
   let weekDays = document.getElementById("weekDays");
   if ((!meta || !weekDays) && weekDetailsMount) {
@@ -4862,155 +4861,106 @@ function renderWeekDetails() {
   }
   if (!meta || !weekDays) return;
 
-  const sessions = getWeekSessions(w);
-  if (!Array.isArray(w.sessions) || !w.sessions.length) w.sessions = sessions;
-  const m = computeWeekMetrics(w.index);
-
-  const volumeLabel = `訓練量：${(m.totalMinutes / 60).toFixed(1)} 小時`;
-  const srpeLabel = `s-RPE：${Math.round(m.totalLoad)} A.U.`;
-  meta.textContent = `${volumeLabel} · ${srpeLabel}`;
   weekDays.replaceChildren();
+  // Update meta text to indicate full schedule
+  meta.textContent = "全 52 週訓練計劃";
 
-  // Locked View for Unpaid Users (Week 2 onwards)
-  if (!state.isPaid && state.selectedWeekIndex > 0) {
-    const lockedWrap = el("div", "dayCard");
-    lockedWrap.style.textAlign = "center";
-    lockedWrap.style.padding = "40px 20px";
-    lockedWrap.style.display = "flex";
-    lockedWrap.style.flexDirection = "column";
-    lockedWrap.style.alignItems = "center";
-    lockedWrap.style.gap = "16px";
+  // Loop all weeks
+  for (let weekIdx = 0; weekIdx < state.weeks.length; weekIdx++) {
+    const w = state.weeks[weekIdx];
+    if (!w) continue;
 
-    const lockIcon = el("div", "", "🔒");
-    lockIcon.style.fontSize = "48px";
+    const sessions = getWeekSessions(w);
+    if (!Array.isArray(w.sessions) || !w.sessions.length) w.sessions = sessions;
+    const m = computeWeekMetrics(w.index);
+
+    const volumeLabel = `訓練量：${(m.totalMinutes / 60).toFixed(1)} 小時`;
+    const srpeLabel = `s-RPE：${Math.round(m.totalLoad)} A.U.`;
     
-    const lockTitle = el("div", "", "此內容需要升級");
-    lockTitle.style.fontSize = "18px";
-    lockTitle.style.fontWeight = "600";
+    // Week Header
+    const header = el("div", "weekSectionHeader");
+    header.style.padding = "24px 0 12px 0";
+    header.style.borderBottom = "2px solid var(--border)";
+    header.style.marginBottom = "16px";
+    header.style.fontWeight = "bold";
+    header.style.fontSize = "1.1rem";
+    header.style.color = "var(--primary)";
     
-    const lockDesc = el("div", "muted", "您目前只能查看第 1 週的訓練內容。請升級以解鎖完整 52 週訓練計畫。");
-    
-    const upgradeBtn = el("button", "btn btn--primary", "立即升級");
-    upgradeBtn.onclick = () => openPaymentModal();
+    const startDateStr = formatYMD(w.monday);
+    const endDateStr = formatYMD(addDays(w.monday, 6));
+    header.textContent = `第 ${w.weekNo} 週 (${startDateStr} ~ ${endDateStr}) · ${volumeLabel} · ${srpeLabel}`;
+    weekDays.appendChild(header);
 
-    lockedWrap.appendChild(lockIcon);
-    lockedWrap.appendChild(lockTitle);
-    lockedWrap.appendChild(lockDesc);
-    lockedWrap.appendChild(upgradeBtn);
-    
-    weekDays.appendChild(lockedWrap);
-    return; // Stop rendering details
-  }
+    // Week Container (Grid)
+    const weekGrid = el("div", "weekGrid");
+    weekGrid.style.display = "grid";
+    weekGrid.style.gridTemplateColumns = "repeat(auto-fit, minmax(280px, 1fr))";
+    weekGrid.style.gap = "16px";
+    weekGrid.style.marginBottom = "32px";
 
-  if (weekDays) {
-    // Read-only: No drag and drop listeners
-  }
+    sessions.forEach((s, i) => {
+      const card = el("div", "dayCard");
+      card.dataset.dayIndex = String(i);
+      ensureSessionWorkouts(s);
 
-  sessions.forEach((s, i) => {
-    const card = el("div", "dayCard");
-    card.dataset.dayIndex = String(i);
-    ensureSessionWorkouts(s);
+      const titleRow = el("div", "dayTitleRow");
+      const titleLeft = el("div", "dayTitleLeft");
+      titleLeft.appendChild(el("div", "dayTitle", s.dayLabel));
+      titleRow.appendChild(titleLeft);
 
-    const titleRow = el("div", "dayTitleRow");
-    const titleLeft = el("div", "dayTitleLeft");
-    // Read-only: No drag handle
-    titleLeft.appendChild(el("div", "dayTitle", s.dayLabel));
-    titleRow.appendChild(titleLeft);
+      const dayDate = addDays(w.monday, i);
+      const titleRight = el("div", "dayTitleRight");
+      titleRight.appendChild(el("div", "dayDate", `${formatWeekdayEnShort(dayDate)} ${formatYMD(dayDate)}`));
 
-    // Read-only: No drag listeners on card
+      const workoutControls = el("div", "dayWorkoutControls");
+      workoutControls.appendChild(el("span", "muted", "當日訓練數量："));
+      workoutControls.appendChild(el("span", "", String(s.workoutsCount || 1)));
+      titleRight.appendChild(workoutControls);
+      titleRow.appendChild(titleRight);
+      card.appendChild(titleRow);
 
-    const dayDate = addDays(w.monday, i);
-    const titleRight = el("div", "dayTitleRight");
-    titleRight.appendChild(el("div", "dayDate", `${formatWeekdayEnShort(dayDate)} ${formatYMD(dayDate)}`));
+      const workoutsWrap = el("div", "dayWorkouts");
+      card.appendChild(workoutsWrap);
+      s.workouts.forEach((workout) => {
+        const metaRow = el("div", "dayMeta");
 
-    const workoutControls = el("div", "dayWorkoutControls");
-    workoutControls.appendChild(el("span", "muted", "當日訓練數量："));
-    workoutControls.appendChild(el("span", "", String(s.workoutsCount || 1)));
-    // Read-only: No helper/reset buttons or select
+        const durationWrap = el("div", "dayField");
+        durationWrap.appendChild(el("span", "", "時長："));
+        const durationVal = Number(workout?.duration) > 0 ? String(Number(workout?.duration)) : "0";
+        durationWrap.appendChild(el("span", "", durationVal));
+        durationWrap.appendChild(el("span", "muted", " 分鐘"));
+        metaRow.appendChild(durationWrap);
 
-    titleRight.appendChild(workoutControls);
-    titleRow.appendChild(titleRight);
-    card.appendChild(titleRow);
+        const rpeWrap = el("div", "dayField");
+        rpeWrap.appendChild(el("span", "", "RPE："));
+        const rpeVal = String(clamp(Number(workout?.rpe) || 1, 1, 10));
+        rpeWrap.appendChild(el("span", "", rpeVal));
+        metaRow.appendChild(rpeWrap);
 
-    const workoutsWrap = el("div", "dayWorkouts");
-    card.appendChild(workoutsWrap);
-    s.workouts.forEach((workout, workoutIndex) => {
-      const metaRow = el("div", "dayMeta");
+        workoutsWrap.appendChild(metaRow);
+      });
 
-      const durationWrap = el("div", "dayField");
-      durationWrap.appendChild(el("span", "", "時長："));
-      const durationVal = Number(workout?.duration) > 0 ? String(Number(workout?.duration)) : "0";
-      durationWrap.appendChild(el("span", "", durationVal));
-      durationWrap.appendChild(el("span", "muted", " 分鐘"));
-      metaRow.appendChild(durationWrap);
-
-      const rpeWrap = el("div", "dayField");
-      rpeWrap.appendChild(el("span", "", "RPE："));
-      const rpeVal = String(clamp(Number(workout?.rpe) || 1, 1, 10));
-      rpeWrap.appendChild(el("span", "", rpeVal));
-      metaRow.appendChild(rpeWrap);
-
-      workoutsWrap.appendChild(metaRow);
-    });
-
-    const dayDateYmd = formatYMD(addDays(w.monday, i));
-    const dayRaces = (Array.isArray(w.races) ? w.races : [])
-      .filter((r) => (r?.date || "") === dayDateYmd)
-      .map((r) => (r?.name || "").trim())
-      .filter(Boolean);
-    if (dayRaces.length) {
-      const racesEl = el("div", "dayRaces");
-      racesEl.appendChild(el("span", "dayRaces__label", "比賽："));
-      racesEl.appendChild(el("span", "dayRaces__names", dayRaces.join(", ")));
-      card.appendChild(racesEl);
-    }
-
-    const noteWrap = el("div", "dayNote");
-    noteWrap.appendChild(el("div", "dayNote__label", "備註"));
-    const noteText = el("div", "dayNote__text", typeof s.note === "string" ? s.note : "");
-    noteWrap.appendChild(noteText);
-    card.appendChild(noteWrap);
-
-  weekDays.appendChild(card);
-  });
-
-  // Add Complete Button (Strict Mode) if showing the latest unlocked week or the one before it
-  const unlocked = getUnlockedWeekIndex();
-  // Show button if this is the current active week (unlocked) OR if it's the previous week but we haven't moved yet (unlocked - 1)
-  // Actually, user wants "Complete This Week" on Week 1. If date passed, move to Week 2.
-  // So we show it on the currently selected week as long as it's <= unlocked.
-  // And strictly, we only need it on the latest week to "advance".
-  if (state.planStarted && state.selectedWeekIndex <= unlocked && state.selectedWeekIndex < 51) {
-    const btnRow = el("div", "dayCard");
-    btnRow.style.textAlign = "center";
-    btnRow.style.padding = "16px";
-    btnRow.style.cursor = "pointer";
-    btnRow.style.backgroundColor = "#e0f2fe"; // Light blue
-    
-    const btn = el("button", "btn btn--primary", "完成此週");
-    btn.onclick = () => {
-      // Re-check time
-      const currentUnlocked = getUnlockedWeekIndex();
-      if (currentUnlocked > state.selectedWeekIndex) {
-        // Time has passed, allowed to advance
-        
-        // Payment Wall: If completing Week 1 (index 0) to go to Week 2 (index 1)
-        if (state.selectedWeekIndex === 0 && !state.isPaid) {
-          openPaymentModal();
-          return;
-        }
-
-        pushHistory();
-        selectWeek(state.selectedWeekIndex + 1);
-        showToast("已完成此週，進入下一週");
-      } else {
-        // Time has not passed
-        alert("這週還沒結束");
+      const dayDateYmd = formatYMD(dayDate);
+      const dayRaces = (Array.isArray(w.races) ? w.races : [])
+        .filter((r) => (r?.date || "") === dayDateYmd)
+        .map((r) => (r?.name || "").trim())
+        .filter(Boolean);
+      if (dayRaces.length) {
+        const racesEl = el("div", "dayRaces");
+        racesEl.appendChild(el("span", "dayRaces__label", "比賽："));
+        racesEl.appendChild(el("span", "dayRaces__names", dayRaces.join(", ")));
+        card.appendChild(racesEl);
       }
-    };
-    
-    btnRow.appendChild(btn);
-    weekDays.appendChild(btnRow);
+
+      const noteWrap = el("div", "dayNote");
+      noteWrap.appendChild(el("div", "dayNote__label", "備註"));
+      const noteText = el("div", "dayNote__text", typeof s.note === "string" ? s.note : "");
+      noteWrap.appendChild(noteText);
+      card.appendChild(noteWrap);
+
+      weekGrid.appendChild(card);
+    });
+    weekDays.appendChild(weekGrid);
   }
 }
 
