@@ -5514,11 +5514,9 @@ function openDesignWizard() {
        const input = document.createElement("select");
        input.className = "input";
        [
-         { label: "150 小時（初階）", value: 150 },
-         { label: "200 小時（初中階）", value: 200 },
-         { label: "250 小時（中階）", value: 250 },
-         { label: "300 小時（中高階）", value: 300 },
-         { label: "350 小時（高階）", value: 350 },
+         { label: "150小時(初階)", value: 150 },
+         { label: "200小時(中階)", value: 200 },
+         { label: "250小時(高階)", value: 250 },
        ].forEach((o) => {
          const opt = document.createElement("option");
          opt.value = String(o.value);
