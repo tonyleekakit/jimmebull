@@ -5712,13 +5712,13 @@ function openDesignWizard() {
         wizardState.startDate
           ? parseYMD(wizardState.startDate)
           : (state.startDate instanceof Date ? state.startDate : null);
-      const minRaceDate = baseStart ? addDays(baseStart, 70) : new Date();
+      const minRaceDate = baseStart ? addDays(baseStart, 154) : new Date();
       const minRaceYmd = formatYMD(minRaceDate);
       const form = el("div");
       form.style.display = "flex";
       form.style.flexDirection = "column";
       form.style.gap = "8px";
- 
+
       const dateInput = document.createElement("input");
       dateInput.className = "input";
       dateInput.type = "date";
@@ -5726,7 +5726,7 @@ function openDesignWizard() {
       dateInput.value = wizardState.currentRace.date && String(wizardState.currentRace.date) < minRaceYmd
         ? minRaceYmd
         : wizardState.currentRace.date;
- 
+
       const distInput = document.createElement("select");
       distInput.className = "input";
       [
@@ -5776,7 +5776,7 @@ function openDesignWizard() {
       addBtn.style.width = "100%";
       addBtn.onclick = () => {
         if (!dateInput.value) return showToast("請選擇比賽日期", { variant: "warn" });
-        if (String(dateInput.value) < minRaceYmd) return showToast("比賽日期需距離開始日期至少 10 週", { variant: "warn" });
+        if (String(dateInput.value) < minRaceYmd) return showToast("比賽日期需距離開始日期至少 22 週", { variant: "warn" });
         if (!prioritySelect.value) return showToast("請選擇優先級", { variant: "warn" });
         const nextPr = normalizeRacePriorityValue(prioritySelect.value);
         const aCount = wizardState.races.filter((r) => normalizeRacePriorityValue(r.priority) === "A").length;
@@ -5805,7 +5805,7 @@ function openDesignWizard() {
               return showToast("請先加入比賽或清空輸入欄", { variant: "warn" });
             }
             if (String(dateInput.value) < minRaceYmd) {
-              return showToast("比賽日期需距離開始日期至少 10 週", { variant: "warn" });
+              return showToast("比賽日期需距離開始日期至少 22 週", { variant: "warn" });
             }
             const aCount = wizardState.races.filter((r) => normalizeRacePriorityValue(r.priority) === "A").length;
             const nextPr = normalizeRacePriorityValue(prioritySelect.value);
