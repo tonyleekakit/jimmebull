@@ -4756,19 +4756,7 @@ function renderWeekPicker() {
 }
 
 function getUnlockedWeekIndex() {
-  if (!state.planStarted || !state.startDate) return 51;
-  const now = new Date();
-  const diff = now - state.startDate;
-  // Weeks passed since start (0-based)
-  // Week 1 starts at t=0. Week 2 starts at t=7days.
-  // So if t < 7 days, index is 0.
-  let idx = Math.floor(diff / (7 * 24 * 3600 * 1000));
-  if (idx < 0) idx = 0;
-  
-  // Add manual advance (for testing)
-  idx += (state.manualAdvanceWeeks || 0);
-  
-  return clamp(idx, 0, 51);
+  return 51; // Always unlock all 52 weeks
 }
 
 function relabelWeekSessions(week) {
