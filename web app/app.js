@@ -2347,17 +2347,30 @@ function sessionPlanForDay(weekIndex, day, ctx) {
 
   if (phase === "Tempo") {
     const idx = phaseStreakIndex(weekIndex, phase);
-    const main = minutes > 0 ? minutes : clamp(30 + idx * 5, 30, 45);
+    const steps = [30, 35, 40, 45, 50, 55, 60];
+    const main = steps[Math.min(idx, steps.length - 1)];
     const distInfo = vdot ? getDistRangeStr(main, vdot, 0.78, 0.86) : "";
-    const details = [`主課：節奏跑 ${main}分鐘${distInfo}（30–45分鐘，可每週 +5分鐘）`, "另加：熱身／放鬆"];
+    const details = [`主課：節奏跑 ${main}分鐘${distInfo}（25–60分鐘，每週 +5分鐘）`, "另加：熱身／放鬆"];
     return { zone: 3, rpe: rpeOverride ?? 6, workoutMinutes: main, noteBody: buildAutoNoteBodyForPlan({ title: "節奏", details, minutes: main, rpeText: "5–6" }) };
   }
   if (phase === "Threshold") {
     const idx = phaseStreakIndex(weekIndex, phase);
-    const repMin = clamp(6 + Math.floor(idx / 2) * 2, 6, 12);
+    const steps = [
+      { sets: 3, rep: 6 },  // 18
+      { sets: 3, rep: 8 },  // 24
+      { sets: 4, rep: 6 },  // 24
+      { sets: 4, rep: 8 },  // 32
+      { sets: 4, rep: 10 }, // 40
+      { sets: 5, rep: 8 },  // 40
+      { sets: 5, rep: 10 }, // 50
+      { sets: 5, rep: 12 }  // 60
+    ];
+    const plan = steps[Math.min(idx, steps.length - 1)];
+    const sets = plan.sets;
+    const repMin = plan.rep;
     const restMin = Math.max(1, Math.round(repMin / 4));
-    const sets = minutes > 0 ? Math.max(1, Math.round(minutes / repMin)) : clamp(3 + Math.floor(idx / 2), 3, 5);
-    const workoutMinutes = minutes > 0 ? minutes : Math.max(0, Math.round(sets * repMin));
+    const workoutMinutes = Math.round(sets * repMin);
+    
     const distInfo = vdot ? getDistRangeStr(repMin, vdot, 0.86, 0.92) : "";
     const details = [`主課：${sets} × ${repMin}分鐘${distInfo}（總量 ${workoutMinutes}分鐘，跑/休 4:1，休 ${restMin}分鐘）`];
     details.push("另加：熱身／放鬆");
@@ -2370,33 +2383,52 @@ function sessionPlanForDay(weekIndex, day, ctx) {
   }
   if (phase === "VO2Max") {
     const idx = phaseStreakIndex(weekIndex, phase);
-    const workTotal = minutes > 0 ? minutes : clamp(5 + idx * 2, 5, 15);
-    const repMin = workTotal <= 6 ? 1 : workTotal <= 9 ? 2 : workTotal <= 12 ? 3 : 4;
-    const reps = Math.max(1, Math.round(workTotal / repMin));
+    const steps = [
+      { sets: 5, rep: 1 },   // 5
+      { sets: 4, rep: 2 },   // 8
+      { sets: 5, rep: 2 },   // 10
+      { sets: 4, rep: 3 },   // 12
+      { sets: 5, rep: 3 },   // 15
+      { sets: 3, rep: 5 }    // 15
+    ];
+    const plan = steps[Math.min(idx, steps.length - 1)];
+    const reps = plan.sets;
+    const repMin = plan.rep;
+    const workTotal = Math.round(reps * repMin);
+    
     const distInfo = vdot ? getDistRangeStr(repMin, vdot, 0.92, 0.99) : "";
     const details = [`主課：${reps} × ${repMin}分鐘${distInfo}（跑/休 1:1）`, "總量：由 5分鐘 逐週加到最多 15分鐘", "另加：熱身／放鬆"];
-    const workoutMinutes = workTotal;
     return {
       zone: 5,
       rpe: rpeOverride ?? 9,
-      workoutMinutes,
-      noteBody: buildAutoNoteBodyForPlan({ title: "最大攝氧量", details, minutes: workoutMinutes, rpeText: "8–9" }),
+      workoutMinutes: workTotal,
+      noteBody: buildAutoNoteBodyForPlan({ title: "最大攝氧量", details, minutes: workTotal, rpeText: "8–9" }),
     };
   }
   if (phase === "Anaerobic") {
     const idx = phaseStreakIndex(weekIndex, phase);
-    const workTotal = minutes > 0 ? minutes : clamp(5 + idx * 2, 5, 15);
-    const repSec = workTotal <= 8 ? 30 : 60;
-    const repMin = repSec === 30 ? 0.5 : 1;
-    const reps = Math.max(1, Math.round(workTotal / repMin));
+    const steps = [
+      { sets: 10, rep: 0.5 }, // 5
+      { sets: 12, rep: 0.5 }, // 6
+      { sets: 16, rep: 0.5 }, // 8
+      { sets: 10, rep: 1 },   // 10
+      { sets: 12, rep: 1 },   // 12
+      { sets: 14, rep: 1 },   // 14
+      { sets: 15, rep: 1 }    // 15
+    ];
+    const plan = steps[Math.min(idx, steps.length - 1)];
+    const reps = plan.sets;
+    const repMin = plan.rep;
+    const repSec = repMin * 60;
+    const workTotal = Math.round(reps * repMin);
+
     const distInfo = vdot ? getDistRangeStr(repMin, vdot, 0.99, 1.06) : "";
     const details = [`主課：${reps} × ${repSec}秒${distInfo}（跑/休 1:1）`, "總量：由 5分鐘 逐週加到最多 15分鐘", "另加：熱身／放鬆"];
-    const workoutMinutes = workTotal;
     return {
       zone: 6,
       rpe: rpeOverride ?? 10,
-      workoutMinutes,
-      noteBody: buildAutoNoteBodyForPlan({ title: "無氧", details, minutes: workoutMinutes, rpeText: "9–10" }),
+      workoutMinutes: workTotal,
+      noteBody: buildAutoNoteBodyForPlan({ title: "無氧", details, minutes: workTotal, rpeText: "9–10" }),
     };
   }
 
@@ -2484,18 +2516,23 @@ function qualityWorkoutMinutesForPhase(weekIndex, phase) {
   const idx = phaseStreakIndex(weekIndex, p);
 
   if (p === "Tempo") {
-    return clamp(30 + idx * 5, 30, 45);
+    const steps = [30, 35, 40, 45, 50, 55, 60];
+    return steps[Math.min(idx, steps.length - 1)];
   }
   if (p === "Threshold") {
-    const repMin = clamp(6 + Math.floor(idx / 2) * 2, 6, 12);
-    const sets = clamp(3 + Math.floor(idx / 2), 3, 5);
-    return Math.max(0, Math.round(sets * repMin));
+    // 3x6=18, 3x8=24, 4x6=24, 4x8=32, 4x10=40, 5x8=40, 5x10=50, 5x12=60
+    const steps = [18, 24, 24, 32, 40, 40, 50, 60];
+    return steps[Math.min(idx, steps.length - 1)];
   }
   if (p === "VO2Max") {
-    return clamp(5 + idx * 2, 5, 15);
+    // 5x1=5, 4x2=8, 5x2=10, 4x3=12, 5x3=15, 3x5=15
+    const steps = [5, 8, 10, 12, 15, 15];
+    return steps[Math.min(idx, steps.length - 1)];
   }
   if (p === "Anaerobic") {
-    return clamp(5 + idx * 2, 5, 15);
+    // 10x0.5=5, 12x0.5=6, 16x0.5=8, 10x1=10, 12x1=12, 14x1=14, 15x1=15
+    const steps = [5, 6, 8, 10, 12, 14, 15];
+    return steps[Math.min(idx, steps.length - 1)];
   }
   return clamp(50, 30, 110);
 }
