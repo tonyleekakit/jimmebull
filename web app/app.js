@@ -5506,9 +5506,9 @@ function openDesignWizard() {
        label.style.fontWeight = "bold";
        label.style.marginBottom = "8px";
 
-       const desc = el("div", "", "例如比上一個訓練年度增加10%");
+       const desc = el("div", "", "選取與過去一年訓練量接近的選項");
        desc.style.fontSize = "12px";
-       desc.style.color = "var(--text-muted)";
+       desc.style.color = "red";
        desc.style.marginBottom = "8px";
 
        const input = document.createElement("select");
