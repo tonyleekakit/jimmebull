@@ -5466,10 +5466,10 @@ function openDesignWizard() {
          const names = ["星期日","星期一","星期二","星期三","星期四","星期五","星期六"];
          lbl.textContent = names[d.getDay()] || "星期一";
        };
-       const desc = el("div", "", "建議開始日期設於星期一或星期日");
-       desc.style.fontSize = "12px";
-       desc.style.color = "var(--muted)";
-       desc.style.marginBottom = "8px";
+       const desc = el("div", "", "開始日期只能選取週一");
+      desc.style.fontSize = "12px";
+      desc.style.color = "red";
+      desc.style.marginBottom = "8px";
        
        content.appendChild(label);
        content.appendChild(desc);
