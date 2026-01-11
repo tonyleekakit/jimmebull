@@ -5562,7 +5562,10 @@ function openDesignWizard() {
       form.style.gridTemplateColumns = "1fr";
       
       const distWrap = el("label", "paceField");
-      distWrap.appendChild(el("span", "muted", "測試距離"));
+      const hint = el("span", "", "輸入最近一次的測試成績以估算目前體能水平");
+      hint.style.color = "red";
+      hint.style.fontSize = "12px";
+      distWrap.appendChild(hint);
       const distSelect = document.createElement("select");
       distSelect.className = "input";
       [
