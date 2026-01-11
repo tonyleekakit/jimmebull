@@ -5721,86 +5721,89 @@ function openDesignWizard() {
         wizardState.startDate
           ? parseYMD(wizardState.startDate)
           : (state.startDate instanceof Date ? state.startDate : null);
-      const minRaceDate = baseStart ? addDays(baseStart, 154) : new Date();
-      const minRaceYmd = formatYMD(minRaceDate);
+      
+      let minDateObj = baseStart ? addDays(baseStart, 154) : new Date();
+      if (wizardState.races.length > 0) {
+        // Find the latest race date
+        const dates = wizardState.races.map(r => new Date(r.date));
+        const maxDate = new Date(Math.max.apply(null, dates));
+        const nextMin = addDays(maxDate, 154);
+        if (nextMin > minDateObj) minDateObj = nextMin;
+      }
+      const minRaceYmd = formatYMD(minDateObj);
+
       const form = el("div");
       form.style.display = "flex";
       form.style.flexDirection = "column";
       form.style.gap = "8px";
 
-      const dateInput = document.createElement("input");
-      dateInput.className = "input";
-      dateInput.type = "date";
-      dateInput.min = minRaceYmd;
-      dateInput.value = wizardState.currentRace.date && String(wizardState.currentRace.date) < minRaceYmd
-        ? minRaceYmd
-        : wizardState.currentRace.date;
+      let dateInput, distInput; // Declare outside for access
 
-      const distInput = document.createElement("select");
-      distInput.className = "input";
-      [
-        { value: 5, label: "5 公里" },
-        { value: 10, label: "10 公里" },
-        { value: 21.1, label: "半程馬拉松" },
-      ].forEach(({ value, label }) => {
-        const opt = document.createElement("option");
-        opt.value = String(value);
-        opt.textContent = label;
-        distInput.appendChild(opt);
-      });
-      if (Number(wizardState.currentRace.distance)) {
-        distInput.value = String(Number(wizardState.currentRace.distance));
+      if (wizardState.races.length >= 2) {
+         const msg = el("div", "", "已達到比賽數量上限 (2場)");
+         msg.style.color = "var(--warn)";
+         msg.style.fontSize = "14px";
+         form.appendChild(msg);
+      } else {
+          dateInput = document.createElement("input");
+          dateInput.className = "input";
+          dateInput.type = "date";
+          dateInput.min = minRaceYmd;
+          dateInput.value = wizardState.currentRace.date && String(wizardState.currentRace.date) < minRaceYmd
+            ? minRaceYmd
+            : wizardState.currentRace.date;
+
+          distInput = document.createElement("select");
+          distInput.className = "input";
+          [
+            { value: 5, label: "5 公里" },
+            { value: 10, label: "10 公里" },
+            { value: 21.1, label: "半程馬拉松" },
+          ].forEach(({ value, label }) => {
+            const opt = document.createElement("option");
+            opt.value = String(value);
+            opt.textContent = label;
+            distInput.appendChild(opt);
+          });
+          if (Number(wizardState.currentRace.distance)) {
+            distInput.value = String(Number(wizardState.currentRace.distance));
+          }
+
+          const updateState = () => {
+            wizardState.currentRace.date = dateInput.value;
+            wizardState.currentRace.distance = Number(distInput.value);
+            wizardState.currentRace.priority = "A";
+          };
+          dateInput.oninput = updateState;
+          distInput.onchange = updateState;
+
+          form.appendChild(dateInput);
+          form.appendChild(distInput);
       }
- 
-      const prioritySelect = document.createElement("select");
-      prioritySelect.className = "input";
-      [
-        { v: "", t: "優先級" },
-        { v: "A", t: "重要" },
-        { v: "C", t: "不重要" },
-      ].forEach(({ v, t }) => {
-        const opt = document.createElement("option");
-        opt.value = v;
-        opt.textContent = t;
-        if (v === wizardState.currentRace.priority) opt.selected = true;
-        prioritySelect.appendChild(opt);
-      });
- 
-      const updateState = () => {
-        wizardState.currentRace.date = dateInput.value;
-        wizardState.currentRace.distance = Number(distInput.value);
-        wizardState.currentRace.priority = prioritySelect.value;
-      };
-      dateInput.oninput = updateState;
-      distInput.onchange = updateState;
-      prioritySelect.onchange = updateState;
- 
-      form.appendChild(dateInput);
-      form.appendChild(distInput);
-      form.appendChild(prioritySelect);
       content.appendChild(form);
- 
+
       const addBtn = el("button", "btn", "加入此比賽");
       addBtn.style.marginTop = "8px";
       addBtn.style.width = "100%";
+      if (wizardState.races.length >= 2) {
+          addBtn.disabled = true;
+          addBtn.style.opacity = "0.5";
+      }
       addBtn.onclick = () => {
-        if (!dateInput.value) return showToast("請選擇比賽日期", { variant: "warn" });
-        if (String(dateInput.value) < minRaceYmd) return showToast("比賽日期需距離開始日期至少 22 週", { variant: "warn" });
-        if (!prioritySelect.value) return showToast("請選擇優先級", { variant: "warn" });
-        const nextPr = normalizeRacePriorityValue(prioritySelect.value);
-        const aCount = wizardState.races.filter((r) => normalizeRacePriorityValue(r.priority) === "A").length;
-        if (nextPr === "A" && aCount >= 2) return showToast("重要最多只可選取兩場", { variant: "warn" });
- 
+        if (wizardState.races.length >= 2) return;
+        if (!dateInput || !dateInput.value) return showToast("請選擇比賽日期", { variant: "warn" });
+        if (String(dateInput.value) < minRaceYmd) return showToast("比賽日期需符合間隔要求 (22週)", { variant: "warn" });
+        
         wizardState.races.push({ 
            ...wizardState.currentRace, 
-           name: "比賽", // Add default name
-           priority: nextPr 
+           name: "比賽", 
+           priority: "A" 
         });
         wizardState.currentRace = { date: "", distance: "", priority: "A" };
         renderStep();
       };
       content.appendChild(addBtn);
- 
+
       prevBtn.onclick = () => {
         wizardState.step--;
         renderStep();
@@ -5808,21 +5811,19 @@ function openDesignWizard() {
       const finishBtn = el("button", "btn btn--primary", "完成及建立");
       finishBtn.onclick = () => {
         try {
-          const hasPending = !!dateInput.value;
+          // If user filled in the form but didn't click "Add", try to add it if valid
+          const hasPending = dateInput && !!dateInput.value;
           if (hasPending) {
-            if (!dateInput.value || !prioritySelect.value) {
-              return showToast("請先加入比賽或清空輸入欄", { variant: "warn" });
+            if (wizardState.races.length >= 2) {
+               return showToast("最多只可選取兩場比賽", { variant: "warn" });
             }
             if (String(dateInput.value) < minRaceYmd) {
-              return showToast("比賽日期需距離開始日期至少 22 週", { variant: "warn" });
+              return showToast("比賽日期需符合間隔要求 (22週)", { variant: "warn" });
             }
-            const aCount = wizardState.races.filter((r) => normalizeRacePriorityValue(r.priority) === "A").length;
-            const nextPr = normalizeRacePriorityValue(prioritySelect.value);
-            if (nextPr === "A" && aCount >= 2) return showToast("重要最多只可選取兩場", { variant: "warn" });
-            wizardState.races.push({ ...wizardState.currentRace, priority: nextPr });
+            // Ensure priority is A
+            wizardState.currentRace.priority = "A";
+            wizardState.races.push({ ...wizardState.currentRace });
           }
-          const aCountAll = wizardState.races.filter((r) => normalizeRacePriorityValue(r.priority) === "A").length;
-          if (aCountAll > 2) return showToast("重要最多只可選取兩場", { variant: "warn" });
           
           applyWizard(wizardState);
           overlay.remove();
