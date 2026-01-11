@@ -5710,6 +5710,12 @@ function openDesignWizard() {
       formTitle.style.fontWeight = "bold";
       formTitle.style.marginBottom = "4px";
       content.appendChild(formTitle);
+
+      const desc = el("div", "", "比賽/測試日期須與開始日期相隔至少22週");
+      desc.style.fontSize = "12px";
+      desc.style.color = "red";
+      desc.style.marginBottom = "8px";
+      content.appendChild(desc);
  
       const baseStart =
         wizardState.startDate
