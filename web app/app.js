@@ -5078,28 +5078,34 @@ function openPaymentModal() {
   const cancelBtn = el("button", "btn", "稍後再說");
   cancelBtn.onclick = () => overlay.remove();
 
-  const payBtn = el("button", "btn btn--primary", "立即付款 (模擬)");
-  payBtn.onclick = () => {
-    // 模擬後端付款驗證
-    // 實際開發時，此處應跳轉至 Stripe 付款頁面或呼叫後端 API
-    simulatePaymentSuccess(); 
+  const payBtn = el("button", "btn btn--primary", "立即付款 ($88 HKD)");
+  payBtn.onclick = async () => {
+    payBtn.disabled = true;
+    payBtn.textContent = "處理中...";
+    
+    try {
+      const res = await fetch("/api/create-checkout", { method: "POST" });
+      const data = await res.json();
+      
+      if (data.error) throw new Error(data.error);
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error("無法建立付款連結");
+      }
+    } catch (err) {
+      alert("付款錯誤: " + err.message);
+      payBtn.disabled = false;
+      payBtn.textContent = "立即付款 ($88 HKD)";
+    }
   };
   
+  // 移除模擬邏輯，改由頁面重新載入後的 URL 參數處理
+  /* 
   function simulatePaymentSuccess() {
-    state.isPaid = true;
-    persistState();
-    overlay.remove();
-    
-    // Auto advance after payment if we were on Week 1
-    if (state.selectedWeekIndex === 0) {
-        pushHistory();
-        selectWeek(state.selectedWeekIndex + 1);
-    } else {
-        // Refresh current view to unlock
-        renderWeekDetails();
-    }
-    showToast("付款成功！已解鎖完整計畫");
+     // ... legacy simulation ...
   }
+  */
 
   actions.appendChild(cancelBtn);
   actions.appendChild(payBtn);
@@ -6276,3 +6282,33 @@ try {
     renderBlog("");
   }
 } catch {}
+
+// Check for payment return
+try {
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get("payment") === "success") {
+    // Payment success!
+    state.isPaid = true;
+    persistState();
+    
+    // Clean URL
+    const url = new URL(window.location.href);
+    url.searchParams.delete("payment");
+    window.history.replaceState({}, "", url.toString());
+    
+    // Notify user
+    showToast("付款成功！已解鎖完整計畫");
+    
+    // Refresh view to ensure everything is unlocked
+    renderWeekDetails();
+    updateHeader();
+  } else if (urlParams.get("payment") === "cancelled") {
+    showToast("付款已取消", { variant: "warn" });
+    // Clean URL
+    const url = new URL(window.location.href);
+    url.searchParams.delete("payment");
+    window.history.replaceState({}, "", url.toString());
+  }
+} catch (e) {
+  console.error("Payment check error", e);
+}
